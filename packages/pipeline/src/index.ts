@@ -87,8 +87,8 @@ async function run() {
     // ── Step 3: Download + parse Hansard ──────────────────────────────────────
     console.log("Step 3: Downloading Hansard XML...");
     const xmlContents = await Promise.all(documents.map(downloadHansardXml));
-    const allBills = [];
-    const allQuestions = [];
+    const allBills: import("./parsers/hansard-xml").ParsedBill[] = [];
+    const allQuestions: import("./parsers/hansard-xml").ParsedQuestion[] = [];
 
     for (const xml of xmlContents) {
       const parsed = parseHansardXml(xml);
