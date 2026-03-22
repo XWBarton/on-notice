@@ -1,17 +1,26 @@
 import { createClient } from "@/lib/supabase";
-import { format } from "date-fns";
 
 export const revalidate = 3600;
 
 export async function GET() {
   const supabase = createClient();
 
-  const { data: episodes } = await supabase
+  const { data: episodesRaw } = await supabase
     .from("episodes")
-    .select("*, sitting_days(sitting_date)")
+    .select("id, title, description, audio_url, duration_sec, published_at, sitting_day_id")
     .not("audio_url", "is", null)
     .order("published_at", { ascending: false })
     .limit(50);
+
+  const episodes = episodesRaw as Array<{
+    id: number;
+    title: string;
+    description: string | null;
+    audio_url: string | null;
+    duration_sec: number | null;
+    published_at: string | null;
+    sitting_day_id: number;
+  }> | null;
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://onnotice.au";
 
