@@ -1,0 +1,35 @@
+name: Sync Members (Weekly)
+
+on:
+  schedule:
+    # Every Monday 10am AWST = 02:00 UTC
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+    inputs:
+      parliament:
+        description: 'Parliament ID'
+        required: false
+        default: 'fed_hor'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Sync members
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPEN_AUSTRALIA_API_KEY: ${{ secrets.OPEN_AUSTRALIA_API_KEY }}
+        run: |
+          PARLIAMENT="${{ github.event.inputs.parliament || 'fed_hor' }}"
+          npx ts-node packages/pipeline/src/index.ts --parliament $PARLIAMENT --members-only

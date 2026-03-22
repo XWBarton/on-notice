@@ -1,0 +1,27 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {},
+    "pipeline": {
+      "cache": false,
+      "env": [
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "ANTHROPIC_API_KEY",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "R2_ENDPOINT",
+        "R2_BUCKET",
+        "OPEN_AUSTRALIA_API_KEY"
+      ]
+    }
+  }
+}
