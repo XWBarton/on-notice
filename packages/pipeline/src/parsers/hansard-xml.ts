@@ -51,12 +51,20 @@ interface OASection {
   excerpt?: string;
 }
 
+export interface ParsedDivisionTime {
+  divisionNumber: number;
+  htime: string; // e.g. "14:32:00"
+}
+
 export function parseDebates(data: OADebatesResponse): {
   bills: ParsedBill[];
   questions: ParsedQuestion[];
+  divisionTimes: ParsedDivisionTime[];
 } {
   const bills: ParsedBill[] = [];
   const questions: ParsedQuestion[] = [];
+  const divisionTimes: ParsedDivisionTime[] = [];
+  let divisionCounter = 0;
 
   const sections = Array.isArray(data) ? data as unknown as OASection[] : [];
   console.log(`Parsing ${sections.length} top-level sections`);
@@ -81,16 +89,26 @@ export function parseDebates(data: OADebatesResponse): {
       if (bill) bills.push(bill);
     }
 
-    // Also check subs for question time (sometimes nested)
+    // Division timestamps — OA logs each division as a section with htime
+    if (title.includes("DIVISION")) {
+      const htime = entry.htime ?? null;
+      if (htime) {
+        divisionCounter++;
+        divisionTimes.push({ divisionNumber: divisionCounter, htime });
+      }
+    }
+
+    // Check subs for divisions too
     for (const sub of section.subs ?? []) {
       const subTitle = (sub.body ?? "").toUpperCase();
-      if (subTitle.includes("QUESTIONS WITHOUT NOTICE") || subTitle.includes("QUESTION TIME")) {
-        console.log(`  → Found question time in sub: ${subTitle.slice(0, 60)}`);
+      if (subTitle.includes("DIVISION") && sub.htime) {
+        divisionCounter++;
+        divisionTimes.push({ divisionNumber: divisionCounter, htime: sub.htime });
       }
     }
   }
 
-  return { bills, questions };
+  return { bills, questions, divisionTimes };
 }
 
 // ── Parsers ───────────────────────────────────────────────────────────────────

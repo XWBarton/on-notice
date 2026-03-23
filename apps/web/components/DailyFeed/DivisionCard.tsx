@@ -5,6 +5,7 @@ interface DivisionCardProps {
     result: string | null;
     ayes_count: number | null;
     noes_count: number | null;
+    occurred_at: string | null;
   };
 }
 
@@ -30,16 +31,27 @@ export function DivisionCard({ division }: DivisionCardProps) {
           {passed ? "PASSED" : "DEFEATED"}
         </span>
       </div>
-      {(division.ayes_count != null || division.noes_count != null) && (
-        <div className="flex gap-4 mt-2 text-sm text-gray-500">
-          <span>
-            <span className="font-medium text-green-700">{division.ayes_count ?? 0}</span> Ayes
+      <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+        {(division.ayes_count != null || division.noes_count != null) && (
+          <>
+            <span>
+              <span className="font-medium text-green-700">{division.ayes_count ?? 0}</span> Ayes
+            </span>
+            <span>
+              <span className="font-medium text-red-700">{division.noes_count ?? 0}</span> Noes
+            </span>
+          </>
+        )}
+        {division.occurred_at && !division.occurred_at.endsWith("T00:00:00Z") && (
+          <span className="ml-auto text-xs text-gray-400">
+            {new Date(division.occurred_at).toLocaleTimeString("en-AU", {
+              hour: "2-digit",
+              minute: "2-digit",
+              timeZone: "Australia/Sydney",
+            })}
           </span>
-          <span>
-            <span className="font-medium text-red-700">{division.noes_count ?? 0}</span> Noes
-          </span>
-        </div>
-      )}
+        )}
+      </div>
     </a>
   );
 }

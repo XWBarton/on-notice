@@ -1,11 +1,13 @@
 import { db } from "./client";
 import type { TVFYDivision } from "../scrapers/tvfy-divisions";
+import type { ParsedDivisionTime } from "../parsers/hansard-xml";
 
 export async function upsertDivisions(
   sittingDayId: number,
   parliamentId: string,
   divisions: TVFYDivision[],
-  memberLookup: (lastName: string, firstName: string, party: string) => string | null
+  memberLookup: (lastName: string, firstName: string, party: string) => string | null,
+  divisionTimes: ParsedDivisionTime[] = []
 ) {
   for (const div of divisions) {
     const { data: existing } = await db
@@ -15,6 +17,12 @@ export async function upsertDivisions(
       .eq("division_number", div.number)
       .maybeSingle();
 
+    // Use OA htime if available (Canberra local, store as AEDT +11:00)
+    const timeEntry = divisionTimes.find((t) => t.divisionNumber === div.number);
+    const occurredAt = timeEntry
+      ? `${div.date}T${timeEntry.htime}+11:00`
+      : `${div.date}T00:00:00Z`;
+
     const divisionRow = {
       sitting_day_id: sittingDayId,
       division_number: div.number,
@@ -22,7 +30,7 @@ export async function upsertDivisions(
       result: div.aye_votes > div.no_votes ? "passed" : "defeated",
       ayes_count: div.aye_votes,
       noes_count: div.no_votes,
-      occurred_at: `${div.date}T00:00:00Z`,
+      occurred_at: occurredAt,
     };
 
     let divisionId: number;

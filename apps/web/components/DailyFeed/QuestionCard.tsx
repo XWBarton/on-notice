@@ -8,7 +8,7 @@ const PARTY_LOOKUP: Record<string, { short_name: string; colour: string }> = {
   // Normalised short names
   ALP:  { short_name: "ALP",  colour: "#D34547" },
   LIB:  { short_name: "LIB",  colour: "#2A4E97" },
-  LNP:  { short_name: "LIB",  colour: "#2A4E97" },
+  LNP:  { short_name: "L/NP", colour: "#244B77" },
   NAT:  { short_name: "NAT",  colour: "#406D50" },
   GRN:  { short_name: "GRN",  colour: "#3B874A" },
   ON:   { short_name: "ON",   colour: "#E1733C" },
@@ -24,7 +24,7 @@ const PARTY_LOOKUP: Record<string, { short_name: string; colour: string }> = {
   "Liberal Party":          { short_name: "LIB", colour: "#2A4E97" },
   "Liberal":                { short_name: "LIB", colour: "#2A4E97" },
   "LIBERA":                 { short_name: "LIB", colour: "#2A4E97" },
-  "Liberal National Party": { short_name: "LIB", colour: "#2A4E97" },
+  "Liberal National Party": { short_name: "L/NP", colour: "#244B77" },
   "The Nationals":          { short_name: "NAT", colour: "#406D50" },
   "National Party":         { short_name: "NAT", colour: "#406D50" },
   "National Party of Australia": { short_name: "NAT", colour: "#406D50" },

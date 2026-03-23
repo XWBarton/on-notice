@@ -84,7 +84,7 @@ async function run() {
   try {
     // ── Step 3: Parse debates from OpenAustralia ───────────────────────────────
     console.log("Step 3: Parsing debates...");
-    const { bills: allBills, questions: allQuestions } = parseDebates(debateData);
+    const { bills: allBills, questions: allQuestions, divisionTimes } = parseDebates(debateData);
 
     console.log(`Parsed: ${allBills.length} bills, ${allQuestions.length} questions`);
 
@@ -149,7 +149,7 @@ async function run() {
       return m?.id ?? null;
     };
 
-    await upsertDivisions(sittingDayId, parliamentId, divisions, memberLookup);
+    await upsertDivisions(sittingDayId, parliamentId, divisions, memberLookup, divisionTimes);
 
     // Generate AI summaries for divisions
     const { data: upsertedDivisions } = await db
