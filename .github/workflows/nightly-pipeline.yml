@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       parliament:
-        description: 'Parliament ID (fed_hor, fed_sen, wa_la)'
+        description: 'Parliament ID (fed_hor or fed_sen)'
         required: false
         default: 'fed_hor'
       date:
@@ -21,10 +21,14 @@ on:
         default: true
 
 jobs:
-  pipeline-hor:
-    name: House of Representatives
+  pipeline:
+    name: ${{ matrix.parliament }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        parliament: ${{ github.event_name == 'schedule' && fromJSON('["fed_hor","fed_sen"]') || fromJSON(format('["{0}"]', github.event.inputs.parliament || 'fed_hor')) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -55,64 +59,16 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          PARLIAMENT="${{ github.event.inputs.parliament || 'fed_hor' }}"
+          ARGS="--parliament ${{ matrix.parliament }}"
           DATE_ARG="${{ github.event.inputs.date }}"
-          SKIP_AUDIO="${{ github.event.inputs.skip_audio || 'true' }}"
-
-          ARGS="--parliament $PARLIAMENT"
           if [ -n "$DATE_ARG" ]; then
             ARGS="$ARGS --date $DATE_ARG"
           fi
-          if [ "$SKIP_AUDIO" = "true" ]; then
+          if [ "${{ github.event.inputs.skip_audio || 'true' }}" = "true" ]; then
             ARGS="$ARGS --skip-audio"
           fi
-
           npx ts-node packages/pipeline/src/index.ts $ARGS
 
       - name: Notify on failure
         if: failure()
-        run: |
-          echo "::error::HoR pipeline failed — check logs above"
-
-  pipeline-sen:
-    name: Senate
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    # Only run Senate automatically on schedule; manual dispatch targets HoR
-    if: github.event_name == 'schedule'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg
-          pip install yt-dlp
-
-      - name: Run pipeline
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPEN_AUSTRALIA_API_KEY: ${{ secrets.OPEN_AUSTRALIA_API_KEY }}
-          TVFY_API_KEY: ${{ secrets.TVFY_API_KEY }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: |
-          npx ts-node packages/pipeline/src/index.ts --parliament fed_sen --skip-audio
-
-      - name: Notify on failure
-        if: failure()
-        run: |
-          echo "::error::Senate pipeline failed — check logs above"
+        run: echo "::error::${{ matrix.parliament }} pipeline failed — check logs above"
