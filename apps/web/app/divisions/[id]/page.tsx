@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase";
 import { notFound } from "next/navigation";
+import { format, parseISO } from "date-fns";
+import Link from "next/link";
 import { PartyBadge } from "@/components/Member/PartyBadge";
 
 export const revalidate = 86400;
@@ -28,11 +30,23 @@ export default async function DivisionPage({
 
   const ayes = votes?.filter((v) => v.vote === "aye") ?? [];
   const noes = votes?.filter((v) => v.vote === "no") ?? [];
-
   const passed = division.result === "passed";
+
+  const sittingDay = division.sitting_days as { sitting_date: string; parliament_id: string } | null;
+  const chamberLabel = sittingDay?.parliament_id === "fed_sen" ? "Senate" : "House of Representatives";
 
   return (
     <div className="space-y-6">
+      {/* Back link */}
+      {sittingDay && (
+        <Link
+          href={`/${sittingDay.sitting_date}?parliament=${sittingDay.parliament_id}`}
+          className="text-sm text-blue-600 hover:underline"
+        >
+          ← {format(parseISO(sittingDay.sitting_date), "d MMMM yyyy")} · {chamberLabel}
+        </Link>
+      )}
+
       <div>
         <h1 className="text-xl font-bold text-gray-900 leading-snug">{division.subject}</h1>
         <div className="flex items-center gap-3 mt-2">
@@ -47,12 +61,22 @@ export default async function DivisionPage({
             {division.ayes_count} Ayes — {division.noes_count} Noes
           </span>
         </div>
+
         {division.bills && (
           <div className="mt-2 text-sm text-gray-500">
-            Re:{" "}
+            Bill:{" "}
             <a href={division.bills.source_url ?? "#"} className="text-blue-600 hover:underline">
               {division.bills.short_title}
             </a>
+          </div>
+        )}
+
+        {(division as { ai_summary?: string | null }).ai_summary && (
+          <div className="mt-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">AI Summary</p>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              {(division as { ai_summary: string }).ai_summary}
+            </p>
           </div>
         )}
       </div>
@@ -81,11 +105,7 @@ function VoteColumn({
   const isAye = label === "Ayes";
   return (
     <div>
-      <h2
-        className={`text-sm font-semibold mb-2 ${
-          isAye ? "text-green-700" : "text-red-700"
-        }`}
-      >
+      <h2 className={`text-sm font-semibold mb-2 ${isAye ? "text-green-700" : "text-red-700"}`}>
         {label} ({votes.length})
       </h2>
       <div className="space-y-1">

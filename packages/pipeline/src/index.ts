@@ -8,7 +8,7 @@
 import { parseArgs } from "node:util";
 import { format } from "date-fns";
 import { db } from "./db/client";
-import { PARLIAMENTS } from "./config";
+import { PARLIAMENTS, FEDERAL_PARTIES } from "./config";
 import { syncFederalMembers } from "./scrapers/fed-members";
 import { fetchDebates, fetchSpeechRows } from "./scrapers/fed-hansard";
 import { fetchDivisionsForDate } from "./scrapers/tvfy-divisions";
@@ -17,6 +17,7 @@ import { classifyQuestion, resetMemberCache } from "./parsers/questions";
 import { summariseBill } from "./ai/summarise-bill";
 import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
+import { summariseDivision } from "./ai/summarise-division";
 import { upsertDivisions } from "./db/upsert-divisions";
 
 async function run() {
@@ -144,20 +145,40 @@ async function run() {
 
     await upsertDivisions(sittingDayId, parliamentId, divisions, memberLookup);
 
+    // Generate AI summaries for divisions
+    const { data: upsertedDivisions } = await db
+      .from("divisions")
+      .select("id, subject, result, ayes_count, noes_count, ai_summary")
+      .eq("sitting_day_id", sittingDayId);
+
+    for (const div of upsertedDivisions ?? []) {
+      if (div.ai_summary) continue; // already summarised
+      const summary = await summariseDivision({
+        subject: div.subject,
+        result: div.result ?? "unknown",
+        ayesCount: div.ayes_count ?? 0,
+        noesCount: div.noes_count ?? 0,
+        date,
+        parliament: config.name,
+      }).catch((e) => { console.warn(`Division summary failed: ${e.message}`); return null; });
+      if (summary) {
+        await db.from("divisions").update({ ai_summary: summary }).eq("id", div.id);
+      }
+    }
+
     // ── Step 5: Classify questions (Dorothy Dixer detection) ─────────────────
     console.log("Step 5: Classifying questions...");
-    const classifiedQuestions = await Promise.all(
-      questionsWithContent.map(async (q) => {
-        const cls = await classifyQuestion(
-          q.askerName,
-          q.ministerName,
-          parliamentId,
-          config.governmentParties,
-          q.questionText
-        );
-        return { ...q, ...cls };
-      })
-    );
+    const classifiedQuestions: Array<(typeof questionsWithContent)[0] & { isDorothyDixer: boolean; askerMemberId: string | null; ministerMemberId: string | null }> = [];
+    for (const q of questionsWithContent) {
+      const cls = await classifyQuestion(
+        q.askerName,
+        q.ministerName,
+        parliamentId,
+        config.governmentParties,
+        q.questionText
+      );
+      classifiedQuestions.push({ ...q, ...cls });
+    }
 
     const realQuestions = classifiedQuestions.filter((q) => !q.isDorothyDixer);
     const dixerCount = classifiedQuestions.length - realQuestions.length;
@@ -202,6 +223,7 @@ async function run() {
       let aiSummary: string | null = null;
 
       if (!q.isDorothyDixer && q.answerText) {
+        await new Promise((r) => setTimeout(r, 1000)); // avoid Claude rate limits
         const result = await summariseQuestion({
           askerName: q.askerName ?? "Unknown",
           askerParty: "Unknown",
@@ -229,6 +251,18 @@ async function run() {
           answer_text: q.answerText,
           is_dorothy_dixer: q.isDorothyDixer,
           ai_summary: aiSummary,
+          asker_name: q.askerName,
+          asker_party: q.askerParty ? (FEDERAL_PARTIES[q.askerParty]?.short_name ?? q.askerParty) : null,
+          minister_name: q.ministerName,
+          minister_party: (() => {
+            // Prefer OA party string (normalised); fall back to member record party
+            if (q.ministerParty) return FEDERAL_PARTIES[q.ministerParty]?.short_name ?? q.ministerParty;
+            if (q.ministerMemberId) {
+              const m = (members ?? []).find((m) => m.id === q.ministerMemberId);
+              return (m?.parties as { short_name: string } | null)?.short_name ?? null;
+            }
+            return null;
+          })(),
         },
         { onConflict: "sitting_day_id,question_number" }
       );

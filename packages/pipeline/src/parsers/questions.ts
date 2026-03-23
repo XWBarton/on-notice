@@ -23,8 +23,7 @@ async function getMemberCache(parliamentId: string): Promise<Map<string, MemberR
   const { data } = await db
     .from("members")
     .select("id, party_id, name_last")
-    .eq("parliament_id", parliamentId)
-    .eq("is_active", true);
+    .eq("parliament_id", parliamentId);
 
   memberCache = new Map((data ?? []).map((m) => [normalise(m.name_last), m]));
   return memberCache;

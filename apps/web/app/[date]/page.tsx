@@ -55,7 +55,8 @@ export default async function DatePage({
         .select("*, asker:members!questions_asker_id_fkey(name_display, party_id, parties(short_name, colour_hex)), minister:members!questions_minister_id_fkey(name_display, role)")
         .eq("sitting_day_id", sittingDay.id)
         .eq("is_dorothy_dixer", false)
-        .order("question_number"),
+        .order("question_number")
+        .limit(50),
     ]);
 
   const availableDates = (allDates ?? []).map((d) => d.sitting_date as string);
