@@ -10,7 +10,7 @@ import { format } from "date-fns";
 import { db } from "./db/client";
 import { PARLIAMENTS } from "./config";
 import { syncFederalMembers } from "./scrapers/fed-members";
-import { fetchDebates } from "./scrapers/fed-hansard";
+import { fetchDebates, fetchSpeechRows } from "./scrapers/fed-hansard";
 import { fetchDivisionsForDate } from "./scrapers/tvfy-divisions";
 import { parseDebates } from "./parsers/hansard-xml";
 import { classifyQuestion, resetMemberCache } from "./parsers/questions";
@@ -86,7 +86,40 @@ async function run() {
     const { bills: allBills, questions: allQuestions } = parseDebates(debateData);
 
     console.log(`Parsed: ${allBills.length} bills, ${allQuestions.length} questions`);
-    const questionsWithContent = allQuestions;
+
+    // ── Step 3b: Enrich questions with full speech content from OA ─────────────
+    console.log("Step 3b: Fetching individual speech content for questions...");
+    const stripHtml = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+    const questionsWithContent = [];
+    for (const q of allQuestions) {
+      if (!q.gid) {
+        questionsWithContent.push(q);
+        continue;
+      }
+
+      const rows = await fetchSpeechRows(q.gid, oaType as "representatives" | "senate").catch(() => []);
+
+      // First htype=12 row is the question; subsequent ones include the answer
+      const speechRows = rows.filter((r) => r.htype === "12");
+      const questionRow = speechRows[0];
+      const answerRows = speechRows.slice(1);
+
+      questionsWithContent.push({
+        ...q,
+        askerName: questionRow?.speaker
+          ? `${questionRow.speaker.first_name} ${questionRow.speaker.last_name}`
+          : q.askerName,
+        askerParty: questionRow?.speaker?.party ?? q.askerParty,
+        ministerName: answerRows[0]?.speaker
+          ? `${answerRows[0].speaker.first_name} ${answerRows[0].speaker.last_name}`
+          : q.ministerName,
+        ministerParty: answerRows[0]?.speaker?.party ?? q.ministerParty,
+        questionText: questionRow?.body ? stripHtml(questionRow.body) : q.questionText,
+        answerText: answerRows.map((r) => stripHtml(r.body ?? "")).filter(Boolean).join("\n\n"),
+      });
+    }
+    console.log(`Enriched ${questionsWithContent.filter((q) => q.askerName).length} questions with speaker info`);
 
     // ── Step 4: Fetch divisions from TVFY ────────────────────────────────────
     console.log("Step 4: Fetching divisions...");

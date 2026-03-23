@@ -52,36 +52,39 @@ export async function fetchDebates(
   return raw as OADebatesResponse;
 }
 
-export interface OASpeech {
+export interface OASpeechRow {
   gid: string;
-  htime?: string;
-  speaker?: { name: string; party: string; constituency: string };
-  speeches?: Array<{
-    speaker?: { name: string; party: string; constituency: string };
-    body?: string;
-  }>;
+  htype: string;
   body?: string;
+  speaker?: {
+    first_name: string;
+    last_name: string;
+    party: string;
+    constituency: string;
+  };
 }
 
 /**
- * Fetch the full speech for a debate section by GID.
- * Returns speaker name, party, and full text.
+ * Fetch all speech rows for a question-time sub-section by GID.
+ * Returns rows including the question (first htype=12) and answer (subsequent htype=12).
+ * Response format: { rows: [...] } or direct array depending on API version.
  */
-export async function fetchSpeech(
+export async function fetchSpeechRows(
   gid: string,
   type: "representatives" | "senate"
-): Promise<OASpeech | null> {
+): Promise<OASpeechRow[]> {
   const apiKey = process.env.OPEN_AUSTRALIA_API_KEY;
   const url = `${OPEN_AUSTRALIA_API}/getDebates?type=${type}&gid=${encodeURIComponent(gid)}&key=${apiKey}&output=json`;
 
   const res = await fetch(url);
-  if (!res.ok) return null;
+  if (!res.ok) return [];
 
-  const raw = await res.json();
-  if (!Array.isArray(raw) || raw.length === 0) return null;
-
-  // The response is an array; find the item matching our gid
-  return raw[0] as OASpeech;
+  const raw = await res.json() as unknown;
+  if (Array.isArray(raw)) return raw as OASpeechRow[];
+  if (raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).rows)) {
+    return (raw as Record<string, unknown[]>).rows as OASpeechRow[];
+  }
+  return [];
 }
 
 /**
