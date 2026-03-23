@@ -19,7 +19,7 @@ export async function upsertDivisions(
       sitting_day_id: sittingDayId,
       division_number: div.number,
       subject: div.name,
-      result: div.outcome === "passed" ? "passed" : "defeated",
+      result: div.aye_votes > div.no_votes ? "passed" : "defeated",
       ayes_count: div.aye_votes,
       noes_count: div.no_votes,
       occurred_at: `${div.date}T00:00:00Z`,

@@ -43,18 +43,31 @@ export const PARLIAMENTS: Record<string, ParliamentConfig> = {
 };
 
 // Federal party IDs (matched to OpenAustralia/Hansard party names)
+// Keys include all known OA name variations for each party
 export const FEDERAL_PARTIES: Record<string, { id: string; name: string; short_name: string; colour_hex: string }> = {
   "Australian Labor Party": { id: "alp", name: "Australian Labor Party", short_name: "ALP", colour_hex: "#D34547" },
+  "Labor": { id: "alp", name: "Australian Labor Party", short_name: "ALP", colour_hex: "#D34547" },
+  "ALP": { id: "alp", name: "Australian Labor Party", short_name: "ALP", colour_hex: "#D34547" },
   "Liberal Party of Australia": { id: "lib", name: "Liberal Party of Australia", short_name: "LIB", colour_hex: "#2A4E97" },
+  "Liberal": { id: "lib", name: "Liberal Party of Australia", short_name: "LIB", colour_hex: "#2A4E97" },
+  "LP": { id: "lib", name: "Liberal Party of Australia", short_name: "LIB", colour_hex: "#2A4E97" },
+  "Liberal National Party": { id: "lnp", name: "Liberal National Party", short_name: "LNP", colour_hex: "#2A4E97" },
+  "LNP": { id: "lnp", name: "Liberal National Party", short_name: "LNP", colour_hex: "#2A4E97" },
   "The Nationals": { id: "nat", name: "The Nationals", short_name: "NAT", colour_hex: "#406D50" },
+  "Nationals": { id: "nat", name: "The Nationals", short_name: "NAT", colour_hex: "#406D50" },
+  "National": { id: "nat", name: "The Nationals", short_name: "NAT", colour_hex: "#406D50" },
+  "NP": { id: "nat", name: "The Nationals", short_name: "NAT", colour_hex: "#406D50" },
   "Australian Greens": { id: "grn", name: "Australian Greens", short_name: "GRN", colour_hex: "#3B874A" },
+  "Greens": { id: "grn", name: "Australian Greens", short_name: "GRN", colour_hex: "#3B874A" },
+  "AG": { id: "grn", name: "Australian Greens", short_name: "GRN", colour_hex: "#3B874A" },
   "Independent": { id: "ind", name: "Independent", short_name: "IND", colour_hex: "#757575" },
   "Centre Alliance": { id: "ca", name: "Centre Alliance", short_name: "CA", colour_hex: "#4B9FB4" },
   "Climate 200": { id: "cli200", name: "Climate 200", short_name: "TEAL", colour_hex: "#4B9FB4" },
   "Katter's Australian Party": { id: "kap", name: "Katter's Australian Party", short_name: "KAP", colour_hex: "#795548" },
   "United Australia Party": { id: "uap", name: "United Australia Party", short_name: "UAP", colour_hex: "#FDD835" },
-  "Pauline Hanson's One Nation": { id: "phon", name: "Pauline Hanson's One Nation", short_name: "PHON", colour_hex: "#E1733C" },
-  "One Nation": { id: "phon", name: "Pauline Hanson's One Nation", short_name: "PHON", colour_hex: "#E1733C" },
+  "Pauline Hanson's One Nation": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },
+  "One Nation": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },
+  "ON": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },
 };
 
 export const OPEN_AUSTRALIA_API = "https://www.openaustralia.org.au/api";
