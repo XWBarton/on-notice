@@ -47,10 +47,11 @@ export async function fetchDebates(
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`OpenAustralia getDebates error: ${res.status}`);
 
-  const data = await res.json() as OADebatesResponse;
-  // Log structure for debugging
-  const keys = Object.keys(data as unknown as Record<string, unknown>);
-  console.log(`OpenAustralia debates response keys: ${keys.join(", ")}`);
+  const data = await res.json() as OADebatesResponse & { error?: string };
+  if (data.error) {
+    console.log(`OpenAustralia debates error: ${data.error}`);
+    return null;
+  }
   return data;
 }
 

@@ -40,7 +40,7 @@ export async function fetchDivisionsForDate(
   const apiKey = process.env.TVFY_API_KEY ?? "";
 
   // Step 1: Get list of divisions for the day
-  const listUrl = `${THEY_VOTE_FOR_YOU_API}/divisions.json?key=${apiKey}&date=${date}&house=${house}&per_page=50`;
+  const listUrl = `${THEY_VOTE_FOR_YOU_API}/divisions.json?key=${apiKey}&start_date=${date}&end_date=${date}&house=${house}&per_page=100`;
   const listRes = await fetch(listUrl);
 
   if (listRes.status === 404) return [];
