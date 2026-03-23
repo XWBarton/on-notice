@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { QuestionCard } from "./QuestionCard";
+import { QuestionCard, type TranscriptEntry } from "./QuestionCard";
 
 type Question = {
   id: number;
@@ -10,6 +10,7 @@ type Question = {
   question_text: string | null;
   answer_text?: string | null;
   ai_summary: string | null;
+  transcript_json?: TranscriptEntry[] | null;
   asker_name?: string | null;
   asker_party?: string | null;
   minister_name?: string | null;

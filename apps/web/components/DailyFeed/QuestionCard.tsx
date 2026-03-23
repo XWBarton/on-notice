@@ -47,6 +47,13 @@ function partyBadgeProps(raw: string | null | undefined) {
   return p ? { short_name: p.short_name, colour_hex: p.colour } : { short_name: raw, colour_hex: "#757575" };
 }
 
+export interface TranscriptEntry {
+  type: "speech" | "interjection" | "procedural";
+  speaker: string | null;
+  party: string | null;
+  text: string;
+}
+
 interface QuestionCardProps {
   question: {
     id: number;
@@ -54,6 +61,7 @@ interface QuestionCardProps {
     question_text: string | null;
     answer_text?: string | null;
     ai_summary: string | null;
+    transcript_json?: TranscriptEntry[] | null;
     asker_name?: string | null;
     asker_party?: string | null;
     minister_name?: string | null;
@@ -130,6 +138,62 @@ function TranscriptText({ text }: { text: string }) {
   );
 }
 
+function StructuredTranscript({ entries }: { entries: TranscriptEntry[] }) {
+  // Group consecutive entries by speaker to show speaker attribution once
+  const groups: { speaker: string | null; party: string | null; entries: TranscriptEntry[] }[] = [];
+  for (const entry of entries) {
+    const last = groups[groups.length - 1];
+    if (entry.type !== "speech") {
+      // Interjections and procedurals always get their own slot
+      groups.push({ speaker: entry.speaker, party: entry.party, entries: [entry] });
+    } else if (last && last.entries[last.entries.length - 1].type === "speech" && last.speaker === entry.speaker) {
+      last.entries.push(entry);
+    } else {
+      groups.push({ speaker: entry.speaker, party: entry.party, entries: [entry] });
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {groups.map((group, gi) => {
+        const firstEntry = group.entries[0];
+        if (firstEntry.type === "procedural") {
+          return (
+            <p key={gi} className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-0.5 italic leading-relaxed">
+              {firstEntry.text}
+            </p>
+          );
+        }
+        if (firstEntry.type === "interjection") {
+          return (
+            <p key={gi} className="text-xs text-gray-400 italic leading-relaxed pl-2 border-l-2 border-gray-200">
+              {group.speaker && <span className="font-medium not-italic text-gray-500">{group.speaker}: </span>}
+              {firstEntry.text}
+            </p>
+          );
+        }
+        // Speech group
+        return (
+          <div key={gi} className="space-y-1">
+            {group.speaker && (
+              <p className="text-xs font-semibold text-gray-500">
+                {group.speaker}
+                {group.party && (() => {
+                  const p = partyBadgeProps(group.party);
+                  return p ? <span className="ml-1 inline-flex"><PartyBadge party={p} /></span> : null;
+                })()}
+              </p>
+            )}
+            {group.entries.map((e, ei) => (
+              <p key={ei} className="text-sm text-gray-600 leading-relaxed">{e.text}</p>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function QuestionCard({ question }: QuestionCardProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -176,17 +240,23 @@ export function QuestionCard({ question }: QuestionCardProps) {
       )}
 
       {expanded && (
-        <div className="mt-3 space-y-3 border-t border-gray-100 pt-3">
-          {question.question_text && (
-            <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Question</p>
-              <TranscriptText text={question.question_text} />
-            </div>
-          )}
-          {question.answer_text && (
-            <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Response</p>
-              <TranscriptText text={question.answer_text} />
+        <div className="mt-3 border-t border-gray-100 pt-3">
+          {question.transcript_json && question.transcript_json.length > 0 ? (
+            <StructuredTranscript entries={question.transcript_json} />
+          ) : (
+            <div className="space-y-3">
+              {question.question_text && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Question</p>
+                  <TranscriptText text={question.question_text} />
+                </div>
+              )}
+              {question.answer_text && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Response</p>
+                  <TranscriptText text={question.answer_text} />
+                </div>
+              )}
             </div>
           )}
         </div>

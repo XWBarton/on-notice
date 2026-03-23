@@ -14,6 +14,7 @@ import { fetchDebates, fetchSpeechRows } from "./scrapers/fed-hansard";
 import { fetchDivisionsForDate } from "./scrapers/tvfy-divisions";
 import { parseDebates } from "./parsers/hansard-xml";
 import { classifyQuestion, resetMemberCache } from "./parsers/questions";
+import { buildTranscript } from "./parsers/transcript";
 import { summariseBill } from "./ai/summarise-bill";
 import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
@@ -101,7 +102,7 @@ async function run() {
     const questionsWithContent = [];
     for (const q of allQuestions) {
       if (!q.gid) {
-        questionsWithContent.push(q);
+        questionsWithContent.push({ ...q, transcriptJson: null });
         continue;
       }
 
@@ -124,6 +125,7 @@ async function run() {
         ministerParty: answerRows[0]?.speaker?.party ?? q.ministerParty,
         questionText: questionRow?.body ? stripHtml(questionRow.body) : q.questionText,
         answerText: answerRows.map((r) => stripHtml(r.body ?? "")).filter(Boolean).join("\n\n"),
+        transcriptJson: buildTranscript(questionRow, answerRows),
       });
     }
     console.log(`Enriched ${questionsWithContent.filter((q) => q.askerName).length} questions with speaker info`);
@@ -258,6 +260,7 @@ async function run() {
           answer_text: q.answerText,
           is_dorothy_dixer: q.isDorothyDixer,
           ai_summary: aiSummary,
+          transcript_json: q.transcriptJson ?? null,
           asker_name: q.askerName,
           asker_party: q.askerParty ? (FEDERAL_PARTIES[q.askerParty]?.short_name ?? q.askerParty) : null,
           minister_name: q.ministerName,
