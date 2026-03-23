@@ -10,9 +10,9 @@ import { format } from "date-fns";
 import { db } from "./db/client";
 import { PARLIAMENTS } from "./config";
 import { syncFederalMembers } from "./scrapers/fed-members";
-import { findHansardDocuments, downloadHansardXml } from "./scrapers/fed-hansard";
+import { fetchDebates } from "./scrapers/fed-hansard";
 import { fetchDivisionsForDate } from "./scrapers/tvfy-divisions";
-import { parseHansardXml } from "./parsers/hansard-xml";
+import { parseDebates } from "./parsers/hansard-xml";
 import { classifyQuestion, resetMemberCache } from "./parsers/questions";
 import { summariseBill } from "./ai/summarise-bill";
 import { summariseQuestion } from "./ai/summarise-question";
@@ -55,13 +55,11 @@ async function run() {
 
   // ── Step 2: Check for sitting / create sitting_days row ─────────────────────
   console.log("Step 2: Checking for sitting day...");
-  const chamber = config.jurisdiction === "federal"
-    ? (config.chamber === "lower" ? "reps" : "senate")
-    : "reps";
+  const oaType = config.chamber === "lower" ? "representatives" : "senate";
 
-  const documents = await findHansardDocuments(date, chamber as "reps" | "senate");
-  if (documents.length === 0) {
-    console.log(`No Hansard found for ${date} — parliament likely not sitting. Exiting.`);
+  const debateData = await fetchDebates(date, oaType as "representatives" | "senate");
+  if (!debateData) {
+    console.log(`No debates found for ${date} — parliament likely not sitting. Exiting.`);
     return;
   }
 
@@ -71,7 +69,6 @@ async function run() {
       {
         parliament_id: parliamentId,
         sitting_date: date,
-        hansard_url: documents[0]?.xmlUrl ?? null,
         pipeline_status: "running",
       },
       { onConflict: "parliament_id,sitting_date" }
@@ -84,17 +81,9 @@ async function run() {
   console.log(`Sitting day ID: ${sittingDayId}`);
 
   try {
-    // ── Step 3: Download + parse Hansard ──────────────────────────────────────
-    console.log("Step 3: Downloading Hansard XML...");
-    const xmlContents = await Promise.all(documents.map(downloadHansardXml));
-    const allBills: import("./parsers/hansard-xml").ParsedBill[] = [];
-    const allQuestions: import("./parsers/hansard-xml").ParsedQuestion[] = [];
-
-    for (const xml of xmlContents) {
-      const parsed = parseHansardXml(xml);
-      allBills.push(...parsed.bills);
-      allQuestions.push(...parsed.questions);
-    }
+    // ── Step 3: Parse debates from OpenAustralia ───────────────────────────────
+    console.log("Step 3: Parsing debates...");
+    const { bills: allBills, questions: allQuestions } = parseDebates(debateData);
 
     console.log(`Parsed: ${allBills.length} bills, ${allQuestions.length} questions`);
 

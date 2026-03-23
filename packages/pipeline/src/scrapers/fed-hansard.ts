@@ -1,56 +1,63 @@
 /**
- * Fetches Federal Hansard XML for a given sitting date from the APH API.
- * APH Hansard API reference: https://www.aph.gov.au/api/hansard
+ * Fetches Federal Hansard debate content from the OpenAustralia API.
+ * Uses getDebates endpoint which provides structured question time content.
+ * Docs: https://www.openaustralia.org.au/api/
+ *
+ * NOTE: APH/ParlInfo is behind Azure WAF and blocks automated access.
+ * OpenAustralia mirrors and parses the Hansard, making it accessible via API.
  */
 
-import { APH_HANSARD_API } from "../config";
+import { OPEN_AUSTRALIA_API } from "../config";
 
-export interface HansardDocument {
+export interface OADebateSection {
   id: string;
-  title: string;
+  parent_id?: { "#text": string } | string;
+  title?: { "#text": string } | string;
+  body?: string;
+  htype?: string;
+  speaker?: {
+    member_id: string;
+    name: string;
+    party: string;
+    constituency: string;
+  };
+  speech?: OADebateSection | OADebateSection[];
+  subsection?: OADebateSection | OADebateSection[];
+}
+
+export interface OADebatesResponse {
   date: string;
-  chamber: string;
-  xmlUrl: string;
+  debates?: {
+    debate?: OADebateSection | OADebateSection[];
+  };
 }
 
 /**
- * Search APH Hansard for documents on a given date.
- * Returns a list of document IDs to fetch.
+ * Fetch debates for a given date and chamber from OpenAustralia.
+ * type: 'representatives' | 'senate' | 'lords' (lords = crossbench)
  */
-export async function findHansardDocuments(
-  date: string,   // YYYY-MM-DD
-  chamber: "reps" | "senate"
-): Promise<HansardDocument[]> {
-  // APH search API
-  const searchUrl = `${APH_HANSARD_API}/search?q=*&fromDate=${date}&toDate=${date}&chamber=${chamber}&output=json&pageSize=50`;
+export async function fetchDebates(
+  date: string,
+  type: "representatives" | "senate"
+): Promise<OADebatesResponse | null> {
+  const apiKey = process.env.OPEN_AUSTRALIA_API_KEY;
+  const url = `${OPEN_AUSTRALIA_API}/getDebates?type=${type}&date=${date}&key=${apiKey}&output=json`;
 
-  const res = await fetch(searchUrl, {
-    headers: { Accept: "application/json" },
-  });
+  const res = await fetch(url);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`OpenAustralia getDebates error: ${res.status}`);
 
-  if (res.status === 404) return [];
-  if (!res.ok) throw new Error(`APH Hansard search failed: ${res.status}`);
-
-  const data = await res.json() as Record<string, unknown>;
-  const results = (data.value ?? data.results ?? []) as Record<string, unknown>[];
-
-  type RawResult = { type?: string; chamber?: string; id: string; title: string; date: string };
-  return (results as RawResult[])
-    .filter((r) => r.type === "hansard" || r.chamber === chamber)
-    .map((r) => ({
-      id: r.id,
-      title: r.title,
-      date: r.date,
-      chamber: chamber,
-      xmlUrl: `${APH_HANSARD_API}/link/?id=chamber/hansard${chamber === "reps" ? "r" : "s"}/${r.id}/&linktype=xml`,
-    }));
+  const data = await res.json() as OADebatesResponse;
+  return data;
 }
 
 /**
- * Download Hansard XML for a given document ID.
+ * Check if parliament sat on a given date by seeing if debates exist.
  */
-export async function downloadHansardXml(doc: HansardDocument): Promise<string> {
-  const res = await fetch(doc.xmlUrl);
-  if (!res.ok) throw new Error(`Failed to download Hansard XML: ${res.status} ${doc.xmlUrl}`);
-  return res.text();
+export async function checkSittingDay(
+  date: string,
+  type: "representatives" | "senate"
+): Promise<boolean> {
+  const result = await fetchDebates(date, type);
+  return result !== null && result.debates !== undefined;
 }

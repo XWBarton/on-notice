@@ -1,6 +1,6 @@
 /**
  * Fetches current federal members from the OpenAustralia API.
- * Endpoint docs: https://www.openaustralia.org.au/api/
+ * Docs: https://www.openaustralia.org.au/api/
  */
 
 import { OPEN_AUSTRALIA_API, FEDERAL_PARTIES } from "../config";
@@ -13,49 +13,44 @@ interface OAMember {
   last_name: string;
   constituency: string;
   party: string;
-  house: "commons" | "lords"; // OA uses UK naming; 'commons' = HoR, 'lords' = Senate
+  house: string;
   entered_house: string;
   left_house?: string;
 }
 
 export async function syncFederalMembers(parliamentId: "fed_hor" | "fed_sen") {
-  const house = parliamentId === "fed_hor" ? "representatives" : "senate";
   const apiKey = process.env.OPEN_AUSTRALIA_API_KEY;
+  const endpoint = parliamentId === "fed_hor" ? "getRepresentatives" : "getSenators";
 
-  const url = `${OPEN_AUSTRALIA_API}/get${
-    house === "representatives" ? "Representatives" : "Senators"
-  }?key=${apiKey}&output=js`;
-
+  const url = `${OPEN_AUSTRALIA_API}/${endpoint}?key=${apiKey}&output=json`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`OpenAustralia API error: ${res.status}`);
 
   const data = await res.json() as Record<string, unknown>;
-  const members: OAMember[] = (data.representatives ?? data.senators ?? []) as OAMember[];
+  const members = (data.representatives ?? data.senators ?? []) as OAMember[];
 
   console.log(`Fetched ${members.length} members for ${parliamentId}`);
 
   for (const m of members) {
+    // Match party name to our known parties, fall back to Independent
     const partyKey = Object.keys(FEDERAL_PARTIES).find(
       (k) => k.toLowerCase() === m.party.toLowerCase()
+        || FEDERAL_PARTIES[k].short_name.toLowerCase() === m.party.toLowerCase()
     );
-    const party = partyKey ? FEDERAL_PARTIES[partyKey] : FEDERAL_PARTIES["Independent"];
+    const party = partyKey ? FEDERAL_PARTIES[partyKey] : {
+      id: `other_${m.party.toLowerCase().replace(/[^a-z]/g, "")}`,
+      name: m.party,
+      short_name: m.party.slice(0, 6).toUpperCase(),
+      colour_hex: "#9E9E9E",
+    };
 
-    // Ensure party exists in DB
     await db.from("parties").upsert(
-      {
-        id: party.id,
-        name: party.name,
-        short_name: party.short_name,
-        colour_hex: party.colour_hex,
-        jurisdiction: "federal",
-      },
+      { id: party.id, name: party.name, short_name: party.short_name, colour_hex: party.colour_hex, jurisdiction: "federal" },
       { onConflict: "id" }
     );
 
-    const memberId = `${parliamentId}_${m.last_name.toLowerCase()}_${m.first_name.toLowerCase()}`.replace(
-      /[^a-z_]/g,
-      ""
-    );
+    const memberId = `${parliamentId}_${m.last_name}_${m.first_name}`
+      .toLowerCase().replace(/[^a-z_]/g, "").slice(0, 80);
 
     await db.from("members").upsert(
       {
