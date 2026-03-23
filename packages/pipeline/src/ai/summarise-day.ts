@@ -23,7 +23,7 @@ export async function summariseDay(
       ? input.divisions
           .map(
             (d) =>
-              `- ${d.subject}: ${d.result.toUpperCase()} (${d.ayes} Ayes, ${d.noes} Noes)`
+              `- ${d.subject}: ${(d.result ?? "unknown").toUpperCase()} (${d.ayes} Ayes, ${d.noes} Noes)`
           )
           .join("\n")
       : "No divisions today.";

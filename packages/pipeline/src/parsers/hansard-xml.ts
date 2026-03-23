@@ -33,6 +33,14 @@ export function parseDebates(data: OADebatesResponse): {
   const bills: ParsedBill[] = [];
   const questions: ParsedQuestion[] = [];
 
+  // Log top-level structure for debugging
+  const topKeys = Object.keys(data as unknown as Record<string, unknown>);
+  console.log(`Debate data top-level keys: ${topKeys.join(", ")}`);
+  if (data.debates) {
+    const debateKeys = Object.keys(data.debates as unknown as Record<string, unknown>);
+    console.log(`debates sub-keys: ${debateKeys.join(", ")}`);
+  }
+
   const debates = toArray(data.debates?.debate);
 
   for (const debate of debates) {

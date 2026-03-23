@@ -20,13 +20,14 @@ export interface TVFYDivisionSummary {
 }
 
 export interface TVFYVote {
+  vote: "aye" | "no";
   member: {
     id: number;
-    name: { first: string; last: string };
-    party: string;
+    first_name: string;
+    last_name: string;
     electorate: string;
+    party: string;
   };
-  vote: "aye" | "no";
 }
 
 export interface TVFYDivision extends TVFYDivisionSummary {

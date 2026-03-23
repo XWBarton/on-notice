@@ -43,10 +43,10 @@ export async function upsertDivisions(
     const votes = div.votes ?? [];
 
     for (const v of votes) {
-      if (!v.member?.name?.last) continue;
-      const memberId = memberLookup(v.member.name.last, v.member.name.first, v.member.party);
+      if (!v.member?.last_name) continue;
+      const memberId = memberLookup(v.member.last_name, v.member.first_name, v.member.party);
       if (!memberId) {
-        console.warn(`Could not find member: ${v.member.name.first} ${v.member.name.last} (${v.member.party})`);
+        console.warn(`Could not find member: ${v.member.first_name} ${v.member.last_name} (${v.member.party})`);
         continue;
       }
 
