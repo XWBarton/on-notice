@@ -3,19 +3,49 @@
 import { useState } from "react";
 import { PartyBadge } from "@/components/Member/PartyBadge";
 
-const PARTY_COLOURS: Record<string, string> = {
-  ALP: "#D34547",
-  LIB: "#2A4E97",
-  LNP: "#244B77",
-  NAT: "#406D50",
-  GRN: "#3B874A",
-  ON:  "#E1733C",
-  TEAL: "#4B9FB4",
-  IND: "#757575",
-  KAP: "#795548",
-  UAP: "#FDD835",
-  CA:  "#4B9FB4",
+// Maps raw OA party strings (and normalized short names) → display badge
+const PARTY_LOOKUP: Record<string, { short_name: string; colour: string }> = {
+  // Normalised short names
+  ALP:  { short_name: "ALP",  colour: "#D34547" },
+  LIB:  { short_name: "LIB",  colour: "#2A4E97" },
+  LNP:  { short_name: "LNP",  colour: "#244B77" },
+  NAT:  { short_name: "NAT",  colour: "#406D50" },
+  GRN:  { short_name: "GRN",  colour: "#3B874A" },
+  ON:   { short_name: "ON",   colour: "#E1733C" },
+  TEAL: { short_name: "TEAL", colour: "#4B9FB4" },
+  IND:  { short_name: "IND",  colour: "#757575" },
+  KAP:  { short_name: "KAP",  colour: "#795548" },
+  UAP:  { short_name: "UAP",  colour: "#FDD835" },
+  CA:   { short_name: "CA",   colour: "#4B9FB4" },
+  // Raw OA variants
+  "Australian Labor Party": { short_name: "ALP", colour: "#D34547" },
+  "Labor":                  { short_name: "ALP", colour: "#D34547" },
+  "Liberal Party of Australia": { short_name: "LIB", colour: "#2A4E97" },
+  "Liberal Party":          { short_name: "LIB", colour: "#2A4E97" },
+  "Liberal":                { short_name: "LIB", colour: "#2A4E97" },
+  "LIBERA":                 { short_name: "LIB", colour: "#2A4E97" },
+  "Liberal National Party": { short_name: "LNP", colour: "#244B77" },
+  "The Nationals":          { short_name: "NAT", colour: "#406D50" },
+  "National Party":         { short_name: "NAT", colour: "#406D50" },
+  "National Party of Australia": { short_name: "NAT", colour: "#406D50" },
+  "National":               { short_name: "NAT", colour: "#406D50" },
+  "NATION":                 { short_name: "NAT", colour: "#406D50" },
+  "Australian Greens":      { short_name: "GRN", colour: "#3B874A" },
+  "Greens":                 { short_name: "GRN", colour: "#3B874A" },
+  "Pauline Hanson's One Nation": { short_name: "ON", colour: "#E1733C" },
+  "One Nation":             { short_name: "ON",  colour: "#E1733C" },
+  "PAULIN":                 { short_name: "ON",  colour: "#E1733C" },
+  "Independent":            { short_name: "IND", colour: "#757575" },
+  "Climate 200":            { short_name: "TEAL", colour: "#4B9FB4" },
+  "Katter's Australian Party": { short_name: "KAP", colour: "#795548" },
+  "United Australia Party": { short_name: "UAP", colour: "#FDD835" },
 };
+
+function partyBadgeProps(raw: string | null | undefined) {
+  if (!raw) return null;
+  const p = PARTY_LOOKUP[raw];
+  return p ? { short_name: p.short_name, colour_hex: p.colour } : { short_name: raw, colour_hex: "#757575" };
+}
 
 interface QuestionCardProps {
   question: {
@@ -54,8 +84,8 @@ export function QuestionCard({ question }: QuestionCardProps) {
               {question.asker?.name_display ?? question.asker_name}
             </span>
             {question.asker?.parties && <PartyBadge party={question.asker.parties} />}
-            {!question.asker?.parties && question.asker_party && (
-              <PartyBadge party={{ short_name: question.asker_party, colour_hex: PARTY_COLOURS[question.asker_party] ?? null }} />
+            {!question.asker?.parties && partyBadgeProps(question.asker_party) && (
+              <PartyBadge party={partyBadgeProps(question.asker_party)!} />
             )}
             <span className="text-gray-400">→</span>
           </>
@@ -63,8 +93,8 @@ export function QuestionCard({ question }: QuestionCardProps) {
         {(question.minister || question.minister_name) && (
           <span className="flex items-center gap-1.5 text-gray-600">
             {question.minister?.name_display ?? question.minister_name}
-            {question.minister_party && (
-              <PartyBadge party={{ short_name: question.minister_party, colour_hex: PARTY_COLOURS[question.minister_party] ?? null }} />
+            {partyBadgeProps(question.minister_party) && (
+              <PartyBadge party={partyBadgeProps(question.minister_party)!} />
             )}
             {question.minister?.role && (
               <span className="text-gray-400"> · {question.minister.role}</span>

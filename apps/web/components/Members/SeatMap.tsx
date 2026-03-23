@@ -16,7 +16,32 @@ interface SeatMapProps {
   senMembers: Member[];
 }
 
-// Political position: 0 = government right, 10 = opposition left
+// Normalize raw party short_names from DB to display values
+const PARTY_NORMALIZE: Record<string, { short_name: string; colour: string }> = {
+  ALP: { short_name: "ALP", colour: "#D34547" },
+  LIB: { short_name: "LIB", colour: "#2A4E97" },
+  LIBERA: { short_name: "LIB", colour: "#2A4E97" },
+  LNP: { short_name: "LNP", colour: "#244B77" },
+  NAT: { short_name: "NAT", colour: "#406D50" },
+  NATION: { short_name: "NAT", colour: "#406D50" },
+  GRN: { short_name: "GRN", colour: "#3B874A" },
+  ON:  { short_name: "ON",  colour: "#E1733C" },
+  PAULIN: { short_name: "ON", colour: "#E1733C" },
+  TEAL: { short_name: "TEAL", colour: "#4B9FB4" },
+  IND: { short_name: "IND", colour: "#757575" },
+  KAP: { short_name: "KAP", colour: "#795548" },
+  UAP: { short_name: "UAP", colour: "#FDD835" },
+  CA:  { short_name: "CA",  colour: "#4B9FB4" },
+  SPEAKE: { short_name: "SPK", colour: "#9E9E9E" },
+  SPK: { short_name: "SPK", colour: "#9E9E9E" },
+};
+
+function normalizeParty(raw: string | null | undefined): { short_name: string; colour: string } {
+  if (!raw) return { short_name: "?", colour: "#9E9E9E" };
+  return PARTY_NORMALIZE[raw] ?? { short_name: raw, colour: "#9E9E9E" };
+}
+
+// Political position by party_id: 0 = government right, 10 = opposition left
 const PARTY_POSITION: Record<string, number> = {
   alp: 0,
   grn: 5,
@@ -25,6 +50,7 @@ const PARTY_POSITION: Record<string, number> = {
   kap: 6.5,
   uap: 7,
   on: 7.5,
+  phon: 7.5,
   lnp: 8,
   nat: 9,
   lib: 10,
@@ -78,13 +104,14 @@ function sortByParty(members: Member[]) {
 }
 
 function partyLegend(members: Member[]) {
-  const seen = new Map<string, { name: string; short_name: string; colour_hex: string | null; count: number }>();
+  const seen = new Map<string, { short_name: string; colour: string; count: number }>();
   for (const m of members) {
-    if (!m.party_id || !m.parties) continue;
-    if (!seen.has(m.party_id)) {
-      seen.set(m.party_id, { ...m.parties, count: 0 });
+    if (!m.party_id) continue;
+    const norm = normalizeParty(m.parties?.short_name);
+    if (!seen.has(norm.short_name)) {
+      seen.set(norm.short_name, { ...norm, count: 0 });
     }
-    seen.get(m.party_id)!.count++;
+    seen.get(norm.short_name)!.count++;
   }
   return Array.from(seen.values()).sort((a, b) => b.count - a.count);
 }
@@ -140,7 +167,7 @@ export function SeatMap({ horMembers, senMembers }: SeatMapProps) {
               {sorted.map((member, i) => {
                 const pos = positions[i];
                 if (!pos) return null;
-                const colour = member.parties?.colour_hex ?? "#9E9E9E";
+                const { colour } = normalizeParty(member.parties?.short_name);
                 const isHovered = hoveredId === member.id;
                 return (
                   <circle
@@ -179,7 +206,7 @@ export function SeatMap({ horMembers, senMembers }: SeatMapProps) {
               <div key={p.short_name} className="flex items-center gap-1.5 text-sm text-gray-600">
                 <div
                   className="w-3 h-3 rounded-full shrink-0"
-                  style={{ backgroundColor: p.colour_hex ?? "#9E9E9E" }}
+                  style={{ backgroundColor: p.colour }}
                 />
                 <span className="font-medium">{p.short_name}</span>
                 <span className="text-gray-400">{p.count}</span>
