@@ -38,9 +38,8 @@ export function parseDebates(data: OADebatesResponse): {
 
   console.log(`Parsing ${debates.length} top-level debate sections`);
   if (debates.length > 0) {
-    const first = debates[0] as unknown as Record<string, unknown>;
-    console.log(`First section keys: ${Object.keys(first).join(", ")}`);
-    console.log(`First section sample: ${JSON.stringify(first).slice(0, 300)}`);
+    // Log full first section to understand structure
+    console.log(`Full first 3 sections: ${JSON.stringify(debates.slice(0, 3), null, 0).slice(0, 1500)}`);
   }
   for (const debate of debates) {
     const raw = debate as unknown as Record<string, unknown>;
