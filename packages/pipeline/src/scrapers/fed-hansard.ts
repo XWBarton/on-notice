@@ -52,6 +52,38 @@ export async function fetchDebates(
   return raw as OADebatesResponse;
 }
 
+export interface OASpeech {
+  gid: string;
+  htime?: string;
+  speaker?: { name: string; party: string; constituency: string };
+  speeches?: Array<{
+    speaker?: { name: string; party: string; constituency: string };
+    body?: string;
+  }>;
+  body?: string;
+}
+
+/**
+ * Fetch the full speech for a debate section by GID.
+ * Returns speaker name, party, and full text.
+ */
+export async function fetchSpeech(
+  gid: string,
+  type: "representatives" | "senate"
+): Promise<OASpeech | null> {
+  const apiKey = process.env.OPEN_AUSTRALIA_API_KEY;
+  const url = `${OPEN_AUSTRALIA_API}/getDebates?type=${type}&gid=${encodeURIComponent(gid)}&key=${apiKey}&output=json`;
+
+  const res = await fetch(url);
+  if (!res.ok) return null;
+
+  const raw = await res.json();
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+
+  // The response is an array; find the item matching our gid
+  return raw[0] as OASpeech;
+}
+
 /**
  * Check if parliament sat on a given date by seeing if debates exist.
  */

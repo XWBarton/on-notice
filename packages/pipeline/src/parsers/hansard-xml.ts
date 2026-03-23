@@ -29,6 +29,7 @@ export interface ParsedQuestion {
   questionText: string;
   answerText: string;
   hansardTime: string | null;
+  gid: string | null;
 }
 
 interface OAEntry {
@@ -107,6 +108,7 @@ function parseQuestionSubs(subs: OAEntry[]): ParsedQuestion[] {
       questionText: s.excerpt ?? "",
       answerText: "",
       hansardTime: s.htime ?? null,
+      gid: s.gid ?? null,
     }));
 }
 
