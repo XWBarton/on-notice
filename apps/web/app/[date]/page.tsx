@@ -3,9 +3,9 @@ import { format, parseISO, isFuture, differenceInDays } from "date-fns";
 import { notFound } from "next/navigation";
 import { BillCard } from "@/components/DailyFeed/BillCard";
 import { DivisionCard } from "@/components/DailyFeed/DivisionCard";
-import { QuestionCard } from "@/components/DailyFeed/QuestionCard";
 import { DigestCard } from "@/components/DailyFeed/DigestCard";
 import { FeedNav } from "@/components/DailyFeed/FeedNav";
+import { QuestionSection } from "@/components/DailyFeed/QuestionSection";
 import { SCHEDULED_SITTING_DATES } from "@/app/calendar/page";
 
 export const revalidate = 3600;
@@ -74,9 +74,8 @@ export default async function DatePage({
         .from("questions")
         .select("*, asker:members!questions_asker_id_fkey(name_display, party_id, parties(short_name, colour_hex)), minister:members!questions_minister_id_fkey(name_display, role)")
         .eq("sitting_day_id", sittingDay.id)
-        .eq("is_dorothy_dixer", false)
         .order("question_number")
-        .limit(50),
+        .limit(80),
     ]);
 
   const availableDates = (allDates ?? []).map((d) => d.sitting_date as string);
@@ -128,12 +127,7 @@ export default async function DatePage({
         )}
 
         {questions && questions.length > 0 && (
-          <section>
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Question Time <span className="normal-case font-normal">(Dorothy Dixers removed)</span></h2>
-            <div className="space-y-3">
-              {questions.map((question) => <QuestionCard key={question.id} question={question} />)}
-            </div>
-          </section>
+          <QuestionSection questions={questions} />
         )}
       </div>
     </div>
