@@ -1,9 +1,14 @@
 /**
  * Parses OpenAustralia debate JSON to extract bills and questions.
- * The OpenAustralia API returns structured debate data with speaker info.
+ *
+ * Actual API structure:
+ * Array of {
+ *   entry: { body: "Section Title", htype: "10", gid: "...", ... },
+ *   subs: [{ body: "Sub title", excerpt: "...", htype: "11", gid: "...", ... }]
+ * }
  */
 
-import type { OADebatesResponse, OADebateSection } from "../scrapers/fed-hansard";
+import type { OADebatesResponse } from "../scrapers/fed-hansard";
 
 export interface ParsedBill {
   shortTitle: string;
@@ -26,6 +31,25 @@ export interface ParsedQuestion {
   hansardTime: string | null;
 }
 
+interface OAEntry {
+  body?: string;
+  htype?: string;
+  gid?: string;
+  htime?: string | null;
+  excerpt?: string;
+  listurl?: string;
+}
+
+interface OASection {
+  entry?: OAEntry;
+  subs?: OAEntry[];
+  // Sometimes top-level items are flat (no entry wrapper)
+  body?: string;
+  htype?: string;
+  gid?: string;
+  excerpt?: string;
+}
+
 export function parseDebates(data: OADebatesResponse): {
   bills: ParsedBill[];
   questions: ParsedQuestion[];
@@ -33,44 +57,34 @@ export function parseDebates(data: OADebatesResponse): {
   const bills: ParsedBill[] = [];
   const questions: ParsedQuestion[] = [];
 
-  // API returns array of top-level debate sections
-  const debates = Array.isArray(data) ? data : [];
+  const sections = Array.isArray(data) ? data as unknown as OASection[] : [];
+  console.log(`Parsing ${sections.length} top-level sections`);
 
-  console.log(`Parsing ${debates.length} top-level debate sections`);
-  if (debates.length > 0) {
-    // Log full first section to understand structure
-    console.log(`Full first 3 sections: ${JSON.stringify(debates.slice(0, 3), null, 0).slice(0, 1500)}`);
-  }
-  for (const debate of debates) {
-    const raw = debate as unknown as Record<string, unknown>;
-    const title = (
-      typeof raw.title === "string" ? raw.title :
-      typeof raw.heading === "string" ? raw.heading :
-      typeof raw.subject === "string" ? raw.subject : ""
-    ).toUpperCase();
+  for (const section of sections) {
+    const entry = section.entry ?? section;
+    const title = (entry.body ?? "").toUpperCase();
+
     if (title) console.log(`  Section: ${title.slice(0, 80)}`);
 
+    // Question time
     if (title.includes("QUESTIONS WITHOUT NOTICE") || title.includes("QUESTION TIME")) {
-      const qs = parseQuestionDebate(debate);
+      const subs = section.subs ?? [];
+      console.log(`  → Found question time with ${subs.length} subs`);
+      const qs = parseQuestionSubs(subs);
       questions.push(...qs);
     }
 
+    // Bills
     if (title.includes("BILL") && (title.includes("READING") || title.includes("INTRODUCTION"))) {
-      const bill = parseBillDebate(debate);
+      const bill = parseBillSection(entry, section.subs ?? []);
       if (bill) bills.push(bill);
     }
 
-    // Also check subsections
-    const subsections = toArray(debate.subsection);
-    for (const sub of subsections) {
-      const subTitle = getText(sub.title)?.toUpperCase() ?? "";
-
+    // Also check subs for question time (sometimes nested)
+    for (const sub of section.subs ?? []) {
+      const subTitle = (sub.body ?? "").toUpperCase();
       if (subTitle.includes("QUESTIONS WITHOUT NOTICE") || subTitle.includes("QUESTION TIME")) {
-        questions.push(...parseQuestionDebate(sub));
-      }
-      if (subTitle.includes("BILL") && (subTitle.includes("READING") || subTitle.includes("INTRODUCTION"))) {
-        const bill = parseBillDebate(sub);
-        if (bill) bills.push(bill);
+        console.log(`  → Found question time in sub: ${subTitle.slice(0, 60)}`);
       }
     }
   }
@@ -80,62 +94,38 @@ export function parseDebates(data: OADebatesResponse): {
 
 // ── Parsers ───────────────────────────────────────────────────────────────────
 
-function parseQuestionDebate(section: OADebateSection): ParsedQuestion[] {
-  const questions: ParsedQuestion[] = [];
-  const subsections = toArray(section.subsection);
-
-  for (let i = 0; i < subsections.length; i++) {
-    const sub = subsections[i];
-    const speeches = toArray(sub.speech);
-
-    if (speeches.length < 2) continue;
-
-    const askerSpeech = speeches[0];
-    const ministerSpeeches = speeches.slice(1);
-
-    questions.push({
+function parseQuestionSubs(subs: OAEntry[]): ParsedQuestion[] {
+  return subs
+    .filter((s) => s.body || s.excerpt)
+    .map((s, i) => ({
       questionNumber: i + 1,
-      askerName: askerSpeech.speaker?.name ?? null,
-      askerParty: askerSpeech.speaker?.party ?? null,
-      ministerName: ministerSpeeches[0]?.speaker?.name ?? null,
-      ministerParty: ministerSpeeches[0]?.speaker?.party ?? null,
-      subject: getText(sub.title) ?? null,
-      questionText: getText(askerSpeech.body) ?? "",
-      answerText: ministerSpeeches.map((s) => getText(s.body) ?? "").join("\n\n"),
-      hansardTime: null,
-    });
-  }
-
-  return questions;
+      askerName: null,      // Requires follow-up API call for full speech
+      askerParty: null,
+      ministerName: null,
+      ministerParty: null,
+      subject: s.body ?? null,
+      questionText: s.excerpt ?? "",
+      answerText: "",
+      hansardTime: s.htime ?? null,
+    }));
 }
 
-function parseBillDebate(section: OADebateSection): ParsedBill | null {
-  const title = getText(section.title) ?? "";
-  const speeches = toArray(section.speech);
-  const firstSpeech = speeches[0];
+function parseBillSection(entry: OAEntry, subs: OAEntry[]): ParsedBill | null {
+  const title = entry.body ?? "";
+  if (!title) return null;
 
+  const firstSub = subs[0];
   return {
     shortTitle: cleanBillTitle(title),
     longTitle: null,
-    introducerName: firstSpeech?.speaker?.name ?? null,
+    introducerName: null,
     stage: inferStage(title),
-    hansardRef: section.id ?? null,
-    introductionText: getText(firstSpeech?.body)?.slice(0, 2000) ?? null,
+    hansardRef: entry.gid ?? null,
+    introductionText: firstSub?.excerpt?.slice(0, 2000) ?? null,
   };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function toArray<T>(val: T | T[] | undefined): T[] {
-  if (!val) return [];
-  return Array.isArray(val) ? val : [val];
-}
-
-function getText(val: { "#text": string } | string | undefined): string | null {
-  if (!val) return null;
-  if (typeof val === "string") return val;
-  return val["#text"] ?? null;
-}
 
 function cleanBillTitle(title: string): string {
   return title
