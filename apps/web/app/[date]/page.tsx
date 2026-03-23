@@ -101,7 +101,7 @@ export default async function DatePage({
 
         {questions && questions.length > 0 && (
           <section>
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Question Time</h2>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Question Time <span className="normal-case font-normal">(Dorothy Dixers removed)</span></h2>
             <div className="space-y-3">
               {questions.map((question) => <QuestionCard key={question.id} question={question} />)}
             </div>

@@ -90,7 +90,13 @@ async function run() {
 
     // ── Step 3b: Enrich questions with full speech content from OA ─────────────
     console.log("Step 3b: Fetching individual speech content for questions...");
-    const stripHtml = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const stripHtml = (html: string) => html
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&#8212;/g, "—").replace(/&#8211;/g, "–").replace(/&#8216;/g, "'")
+      .replace(/&#8217;/g, "'").replace(/&#8220;/g, "\u201c").replace(/&#8221;/g, "\u201d")
+      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
+      .replace(/&#\d+;/g, " ")
+      .replace(/\s+/g, " ").trim();
 
     const questionsWithContent = [];
     for (const q of allQuestions) {
