@@ -81,7 +81,7 @@ const CX = 360;
 const CY = 440;
 
 function computePositions(rows: [number, number][]) {
-  const positions: { x: number; y: number }[] = [];
+  const positions: { x: number; y: number; t: number }[] = [];
   for (const [radius, count] of rows) {
     for (let i = 0; i < count; i++) {
       const t = count === 1 ? 0.5 : i / (count - 1);
@@ -89,9 +89,12 @@ function computePositions(rows: [number, number][]) {
       positions.push({
         x: CX + radius * Math.cos(angle),
         y: CY - radius * Math.sin(angle),
+        t,
       });
     }
   }
+  // Sort by t so each party occupies a clean angular sector
+  positions.sort((a, b) => a.t - b.t);
   return positions;
 }
 
