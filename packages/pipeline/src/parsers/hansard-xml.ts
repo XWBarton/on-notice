@@ -37,9 +37,19 @@ export function parseDebates(data: OADebatesResponse): {
   const debates = Array.isArray(data) ? data : [];
 
   console.log(`Parsing ${debates.length} top-level debate sections`);
+  if (debates.length > 0) {
+    const first = debates[0] as unknown as Record<string, unknown>;
+    console.log(`First section keys: ${Object.keys(first).join(", ")}`);
+    console.log(`First section sample: ${JSON.stringify(first).slice(0, 300)}`);
+  }
   for (const debate of debates) {
-    const title = getText(debate.title)?.toUpperCase() ?? "";
-    if (title) console.log(`  Section: ${title.slice(0, 60)}`);
+    const raw = debate as unknown as Record<string, unknown>;
+    const title = (
+      typeof raw.title === "string" ? raw.title :
+      typeof raw.heading === "string" ? raw.heading :
+      typeof raw.subject === "string" ? raw.subject : ""
+    ).toUpperCase();
+    if (title) console.log(`  Section: ${title.slice(0, 80)}`);
 
     if (title.includes("QUESTIONS WITHOUT NOTICE") || title.includes("QUESTION TIME")) {
       const qs = parseQuestionDebate(debate);
