@@ -70,49 +70,59 @@ interface QuestionCardProps {
   };
 }
 
-// Sentence-level patterns that indicate an interruption or procedural note
+// Lines that are Speaker/Chair procedural interventions
 const SPEAKER_PATTERNS = [
-  /^Order[!.]?/i,
+  /^Order[!.]*/i,
   /^Resume your seat/i,
-  /^The (minister|member|manager|speaker|honourable member|house)/i,
-  /^(Honourable|Opposition|Government) members? interject/i,
-  /interjecting[—–-]/i,
-  /^on a point of order/i,
+  /^The (minister|member|manager|leader|honourable member|house|senator)\b/i,
+  /^(Honourable|Opposition|Government|All) members?/i,
+  /^(Senator|Member) for \w+ (will|would|has|is)\b/i,
+  /^I (now )?call (on )?the/i,
+  /^Thanks?,\s*(member|senator|minister|mr|ms|mrs|dr)/i,
+  /^That (is|was) the (question|answer|end)/i,
 ];
 
-function classifySentence(s: string): "speaker" | "interjection" | "speech" {
-  const trimmed = s.trim();
-  if (!trimmed) return "speech";
-  if (SPEAKER_PATTERNS.some((p) => p.test(trimmed))) return "speaker";
-  if (/interject/i.test(trimmed) || trimmed.endsWith("—") || trimmed.endsWith("–")) return "interjection";
+// Lines that are interjections from the floor
+const INTERJECTION_PATTERNS = [
+  /interject/i,
+  /[—–]$/, // sentence cut off with em-dash
+  /^You\b.{0,40}[!.]$/, // short accusatory "You lied", "You said", etc.
+  /^[A-Z][a-z]+ members?:/,
+];
+
+function classifyLine(s: string): "speaker" | "interjection" | "speech" {
+  const t = s.trim();
+  if (!t) return "speech";
+  if (SPEAKER_PATTERNS.some((p) => p.test(t))) return "speaker";
+  if (INTERJECTION_PATTERNS.some((p) => p.test(t))) return "interjection";
   return "speech";
 }
 
 function TranscriptText({ text }: { text: string }) {
-  // Split on sentence boundaries while keeping the delimiter
-  const sentences = text.split(/(?<=[\.\!\?])\s+/);
+  // Pipeline joins answer rows with \n\n — split on any newline sequence
+  const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
 
   return (
-    <div className="space-y-1">
-      {sentences.map((sentence, i) => {
-        const kind = classifySentence(sentence);
+    <div className="space-y-1.5">
+      {lines.map((line, i) => {
+        const kind = classifyLine(line);
         if (kind === "speaker") {
           return (
             <p key={i} className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-0.5 italic leading-relaxed">
-              {sentence.trim()}
+              {line}
             </p>
           );
         }
         if (kind === "interjection") {
           return (
             <p key={i} className="text-xs text-gray-400 italic leading-relaxed pl-2 border-l-2 border-gray-200">
-              {sentence.trim()}
+              {line}
             </p>
           );
         }
         return (
           <p key={i} className="text-sm text-gray-600 leading-relaxed">
-            {sentence.trim()}
+            {line}
           </p>
         );
       })}
