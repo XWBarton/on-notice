@@ -98,8 +98,7 @@ async function run() {
     const { data: members } = await db
       .from("members")
       .select("id, name_last, name_first, party_id, parties(short_name)")
-      .eq("parliament_id", parliamentId)
-      .eq("is_active", true);
+      .eq("parliament_id", parliamentId);
 
     const memberLookup = (lastName: string, firstName: string, party: string): string | null => {
       const m = (members ?? []).find(

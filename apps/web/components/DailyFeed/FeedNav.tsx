@@ -12,8 +12,8 @@ export function FeedNav({ currentDate, currentParliament, availableDates }: Feed
   const router = useRouter();
 
   const chambers = [
-    { id: "fed_hor", label: "House of Reps" },
-    { id: "fed_sen", label: "Senate" },
+    { id: "fed_hor", label: "House of Reps", activeClass: "bg-[#006945] text-white", hoverClass: "hover:bg-green-50 text-gray-600" },
+    { id: "fed_sen", label: "Senate", activeClass: "bg-[#C1121F] text-white", hoverClass: "hover:bg-red-50 text-gray-600" },
   ];
 
   function navigate(date: string, parliament: string) {
@@ -30,8 +30,8 @@ export function FeedNav({ currentDate, currentParliament, availableDates }: Feed
             onClick={() => navigate(currentDate, c.id)}
             className={`px-4 py-1.5 font-medium transition-colors ${
               currentParliament === c.id
-                ? "bg-gray-900 text-white"
-                : "bg-white text-gray-600 hover:bg-gray-50"
+                ? c.activeClass
+                : `bg-white ${c.hoverClass}`
             }`}
           >
             {c.label}
