@@ -259,7 +259,8 @@ async function run() {
             if (q.ministerParty) return FEDERAL_PARTIES[q.ministerParty]?.short_name ?? q.ministerParty;
             if (q.ministerMemberId) {
               const m = (members ?? []).find((m) => m.id === q.ministerMemberId);
-              return (m?.parties as { short_name: string } | null)?.short_name ?? null;
+              const party = m?.parties as unknown as { short_name: string } | null;
+              return party?.short_name ?? null;
             }
             return null;
           })(),
