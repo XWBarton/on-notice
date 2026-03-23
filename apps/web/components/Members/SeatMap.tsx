@@ -188,6 +188,24 @@ export function SeatMap({ horMembers, senMembers }: SeatMapProps) {
           </div>
 
           <p className="text-sm text-gray-400 mt-3 text-center">{members.length} members</p>
+
+          {/* Member list */}
+          <div className="mt-8 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-2">
+            {sorted.map((member) => (
+              <div key={member.id} className="flex items-center gap-1.5 text-sm py-1 border-b border-gray-100">
+                {member.parties && (
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: member.parties.colour_hex ?? "#9E9E9E" }}
+                  />
+                )}
+                <span className="text-gray-800 truncate">{member.name_display}</span>
+                {member.electorate && (
+                  <span className="text-gray-400 text-xs truncate hidden sm:block">{member.electorate}</span>
+                )}
+              </div>
+            ))}
+          </div>
         </>
       )}
     </div>

@@ -3,6 +3,20 @@
 import { useState } from "react";
 import { PartyBadge } from "@/components/Member/PartyBadge";
 
+const PARTY_COLOURS: Record<string, string> = {
+  ALP: "#D34547",
+  LIB: "#2A4E97",
+  LNP: "#244B77",
+  NAT: "#406D50",
+  GRN: "#3B874A",
+  ON:  "#E1733C",
+  TEAL: "#4B9FB4",
+  IND: "#757575",
+  KAP: "#795548",
+  UAP: "#FDD835",
+  CA:  "#4B9FB4",
+};
+
 interface QuestionCardProps {
   question: {
     id: number;
@@ -41,7 +55,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
             </span>
             {question.asker?.parties && <PartyBadge party={question.asker.parties} />}
             {!question.asker?.parties && question.asker_party && (
-              <PartyBadge party={{ short_name: question.asker_party, colour_hex: null }} />
+              <PartyBadge party={{ short_name: question.asker_party, colour_hex: PARTY_COLOURS[question.asker_party] ?? null }} />
             )}
             <span className="text-gray-400">→</span>
           </>
@@ -50,7 +64,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
           <span className="flex items-center gap-1.5 text-gray-600">
             {question.minister?.name_display ?? question.minister_name}
             {question.minister_party && (
-              <PartyBadge party={{ short_name: question.minister_party, colour_hex: null }} />
+              <PartyBadge party={{ short_name: question.minister_party, colour_hex: PARTY_COLOURS[question.minister_party] ?? null }} />
             )}
             {question.minister?.role && (
               <span className="text-gray-400"> · {question.minister.role}</span>

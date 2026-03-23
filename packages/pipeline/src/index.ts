@@ -148,16 +148,17 @@ async function run() {
     // Generate AI summaries for divisions
     const { data: upsertedDivisions } = await db
       .from("divisions")
-      .select("id, subject, result, ayes_count, noes_count, ai_summary")
-      .eq("sitting_day_id", sittingDayId);
+      .select("id, division_number, subject, result, ayes_count, noes_count, ai_summary")
+      .eq("sitting_day_id", sittingDayId)
+      .order("division_number");
 
     for (const div of upsertedDivisions ?? []) {
-      if (div.ai_summary) continue; // already summarised
       const summary = await summariseDivision({
         subject: div.subject,
         result: div.result ?? "unknown",
         ayesCount: div.ayes_count ?? 0,
         noesCount: div.noes_count ?? 0,
+        divisionNumber: div.division_number ?? 0,
         date,
         parliament: config.name,
       }).catch((e) => { console.warn(`Division summary failed: ${e.message}`); return null; });
