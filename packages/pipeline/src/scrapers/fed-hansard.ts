@@ -48,6 +48,9 @@ export async function fetchDebates(
   if (!res.ok) throw new Error(`OpenAustralia getDebates error: ${res.status}`);
 
   const data = await res.json() as OADebatesResponse;
+  // Log structure for debugging
+  const keys = Object.keys(data as unknown as Record<string, unknown>);
+  console.log(`OpenAustralia debates response keys: ${keys.join(", ")}`);
   return data;
 }
 

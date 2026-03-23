@@ -20,8 +20,8 @@ export async function upsertDivisions(
       division_number: div.number,
       subject: div.name,
       result: div.outcome === "passed" ? "passed" : "defeated",
-      ayes_count: div.aye_votes.length,
-      noes_count: div.no_votes.length,
+      ayes_count: div.aye_votes,
+      noes_count: div.no_votes,
       occurred_at: `${div.date}T00:00:00Z`,
     };
 
@@ -39,11 +39,8 @@ export async function upsertDivisions(
       divisionId = data!.id;
     }
 
-    // Upsert individual votes
-    const votes = [
-      ...div.aye_votes.map((v) => ({ ...v, vote: "aye" as const })),
-      ...div.no_votes.map((v) => ({ ...v, vote: "no" as const })),
-    ];
+    // Upsert individual votes from the detail endpoint
+    const votes = div.votes ?? [];
 
     for (const v of votes) {
       const memberId = memberLookup(v.member.name.last, v.member.name.first, v.member.party);

@@ -27,6 +27,8 @@ export async function syncFederalMembers(parliamentId: "fed_hor" | "fed_sen") {
   if (!res.ok) throw new Error(`OpenAustralia API error: ${res.status}`);
 
   const data = await res.json() as Record<string, unknown>;
+  // Log top-level keys so we can see the actual response shape
+  console.log(`OpenAustralia response keys: ${Object.keys(data).join(", ")}`);
   const members = (data.representatives ?? data.senators ?? []) as OAMember[];
 
   console.log(`Fetched ${members.length} members for ${parliamentId}`);

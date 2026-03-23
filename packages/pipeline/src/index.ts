@@ -207,8 +207,8 @@ async function run() {
     const divisionSummaries = divisions.map((d) => ({
       subject: d.name,
       result: d.outcome,
-      ayes: d.aye_votes.length,
-      noes: d.no_votes.length,
+      ayes: d.aye_votes,
+      noes: d.no_votes,
     }));
 
     const digest = await summariseDay({
