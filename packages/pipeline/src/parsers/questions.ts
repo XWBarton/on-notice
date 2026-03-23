@@ -53,9 +53,13 @@ export async function classifyQuestion(
   const askerParty = asker?.party_id ?? null;
   const ministerParty = minister?.party_id ?? null;
 
-  // Dorothy Dixer: same party asking same party (regardless of which party)
-  // Catches both government self-questions and crossbench same-party exchanges
-  if (askerParty && ministerParty && askerParty === ministerParty) {
+  // Clear Dorothy Dixer: both same party AND minister is in government
+  if (
+    askerParty &&
+    ministerParty &&
+    askerParty === ministerParty &&
+    governmentParties.includes(ministerParty)
+  ) {
     return {
       isDorothyDixer: true,
       askerMemberId: asker?.id ?? null,
@@ -63,7 +67,7 @@ export async function classifyQuestion(
     };
   }
 
-  // Clear genuine question: different parties, asker is not in government
+  // Clear opposition/crossbench question
   if (
     askerParty &&
     ministerParty &&
