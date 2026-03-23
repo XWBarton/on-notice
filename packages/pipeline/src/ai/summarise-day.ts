@@ -41,10 +41,11 @@ export async function summariseDay(
 
   return callClaude<{ lede: string; digest: string }>(
     SONNET,
-    `You are writing a daily parliamentary briefing for politically engaged Australians.
-Tone: informative, neutral, slightly dry wit is acceptable. Max 200 words total.
-Do NOT use markdown formatting — no bold, no asterisks, no headers.
-Always output valid JSON.`,
+    `You are writing a factual daily parliamentary briefing for Australians.
+Be strictly neutral — report what happened, not whether it was good or bad.
+Do not characterise politicians' motives, do not editoralise, do not use loaded language.
+Stick to: what was introduced, what was voted on, what was asked and answered.
+Max 200 words total. No markdown. Always output valid JSON.`,
     `Date: ${input.date}, ${input.parliament}
 
 Bills introduced today:
@@ -56,9 +57,10 @@ ${divisionsBlock}
 Question time highlights (Dorothy Dixers removed):
 ${questionsBlock}
 
-Write a daily digest in plain prose (no markdown):
-1. One-sentence lede summarising the most significant event
-2. A short paragraph covering bills, votes, and question time highlights
+Write a daily digest in plain prose:
+1. One-sentence lede stating the most significant event factually
+2. A short paragraph covering what bills were introduced, how votes went, and what topics were raised in question time
+Do not express opinions on outcomes. Report facts only.
 Output JSON: {"lede": "...", "digest": "..."}`
   );
 }
