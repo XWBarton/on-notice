@@ -21,18 +21,12 @@ interface QuestionCardProps {
   };
 }
 
-const PREVIEW_LENGTH = 120;
-
 export function QuestionCard({ question }: QuestionCardProps) {
-  const fullText = question.ai_summary ?? question.question_text ?? null;
-  const needsTruncation = fullText !== null && fullText.length > PREVIEW_LENGTH;
   const [expanded, setExpanded] = useState(false);
 
-  const displayText = fullText
-    ? expanded || !needsTruncation
-      ? fullText
-      : fullText.slice(0, PREVIEW_LENGTH) + "…"
-    : null;
+  const preview = question.ai_summary ?? question.question_text ?? null;
+  const hasFullText = question.question_text && question.question_text.length > (question.ai_summary?.length ?? 0);
+  const displayText = expanded && hasFullText ? question.question_text : preview;
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -62,12 +56,12 @@ export function QuestionCard({ question }: QuestionCardProps) {
         <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">{displayText}</p>
       )}
 
-      {needsTruncation && (
+      {hasFullText && (
         <button
           onClick={() => setExpanded((e) => !e)}
-          className="mt-2 text-xs text-blue-600 hover:underline"
+          className="mt-2 text-xs font-medium text-blue-600 hover:underline cursor-pointer"
         >
-          {expanded ? "Show less" : "Show more"}
+          {expanded ? "Show less" : "Show full question"}
         </button>
       )}
     </div>
