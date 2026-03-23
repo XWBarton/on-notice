@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { BillCard } from "@/components/DailyFeed/BillCard";
 import { DivisionCard } from "@/components/DailyFeed/DivisionCard";
 import { QuestionCard } from "@/components/DailyFeed/QuestionCard";
@@ -9,13 +9,15 @@ export const revalidate = 3600;
 
 export default async function TodayPage() {
   const supabase = createClient();
-  const today = format(new Date(), "yyyy-MM-dd");
 
+  // Show the most recent sitting day that has completed data
   const { data: sittingDay } = await supabase
     .from("sitting_days")
     .select("*")
-    .eq("sitting_date", today)
     .eq("parliament_id", "fed_hor")
+    .eq("pipeline_status", "complete")
+    .order("sitting_date", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (!sittingDay) {
@@ -26,6 +28,9 @@ export default async function TodayPage() {
       </div>
     );
   }
+
+  const today = format(new Date(), "yyyy-MM-dd");
+  const isToday = sittingDay.sitting_date === today;
 
   const [{ data: digest }, { data: bills }, { data: divisions }, { data: questions }] =
     await Promise.all([
@@ -54,9 +59,14 @@ export default async function TodayPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">
-          {format(new Date(sittingDay.sitting_date), "EEEE d MMMM yyyy")}
-        </h1>
+        <div>
+          <h1 className="text-2xl font-bold">
+            {format(parseISO(sittingDay.sitting_date), "EEEE d MMMM yyyy")}
+          </h1>
+          {!isToday && (
+            <p className="text-sm text-gray-500 mt-0.5">Most recent sitting day</p>
+          )}
+        </div>
         <span className="text-sm text-gray-500">House of Representatives</span>
       </div>
 
