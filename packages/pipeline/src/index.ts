@@ -10,7 +10,7 @@ import { format } from "date-fns";
 import { db } from "./db/client";
 import { PARLIAMENTS } from "./config";
 import { syncFederalMembers } from "./scrapers/fed-members";
-import { fetchDebates, fetchSpeech } from "./scrapers/fed-hansard";
+import { fetchDebates } from "./scrapers/fed-hansard";
 import { fetchDivisionsForDate } from "./scrapers/tvfy-divisions";
 import { parseDebates } from "./parsers/hansard-xml";
 import { classifyQuestion, resetMemberCache } from "./parsers/questions";
@@ -86,34 +86,7 @@ async function run() {
     const { bills: allBills, questions: allQuestions } = parseDebates(debateData);
 
     console.log(`Parsed: ${allBills.length} bills, ${allQuestions.length} questions`);
-
-    // ── Step 3b: Enrich questions with full speech content ─────────────────────
-    console.log("Step 3b: Fetching full speech content for questions...");
-    const questionsWithContent = await Promise.all(
-      allQuestions.map(async (q) => {
-        if (!q.gid) return q;
-        const speech = await fetchSpeech(q.gid, oaType as "representatives" | "senate").catch(() => null);
-        if (!speech) return q;
-
-        // Debug: log raw structure for first question only
-        if (q.questionNumber === 1) {
-          console.log(`Speech sample: ${JSON.stringify(speech).slice(0, 500)}`);
-        }
-
-        // Extract speaker name/party and full speech body from nested speeches
-        const speeches = speech.speeches ?? [];
-        const firstSpeaker = speeches[0]?.speaker ?? speech.speaker;
-        const fullText = speeches.map((s) => s.body ?? "").filter(Boolean).join("\n\n");
-
-        return {
-          ...q,
-          askerName: firstSpeaker?.name ?? q.askerName,
-          askerParty: firstSpeaker?.party ?? q.askerParty,
-          questionText: fullText || q.questionText,
-        };
-      })
-    );
-    console.log(`Enriched ${questionsWithContent.filter((q) => q.questionText.length > 100).length} questions with full text`);
+    const questionsWithContent = allQuestions;
 
     // ── Step 4: Fetch divisions from TVFY ────────────────────────────────────
     console.log("Step 4: Fetching divisions...");
