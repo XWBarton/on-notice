@@ -98,9 +98,10 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
 
           if (isScheduled) {
             return (
-              <div
+              <a
                 key={dateStr}
-                className="aspect-square flex flex-col items-center justify-center rounded-lg"
+                href={`/${dateStr}`}
+                className="aspect-square flex flex-col items-center justify-center rounded-lg hover:opacity-70 transition-opacity"
                 style={{
                   background: scheduledBoth
                     ? "linear-gradient(135deg, #00694520 50%, #C1121F20 50%)"
@@ -112,7 +113,7 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
                 <span className={`text-sm font-medium ${scheduledHor ? "text-[#006945]" : "text-[#C1121F]"}`}>
                   {format(day, "d")}
                 </span>
-              </div>
+              </a>
             );
           }
 

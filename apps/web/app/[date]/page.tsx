@@ -1,11 +1,12 @@
 import { createClient } from "@/lib/supabase";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, isFuture } from "date-fns";
 import { notFound } from "next/navigation";
 import { BillCard } from "@/components/DailyFeed/BillCard";
 import { DivisionCard } from "@/components/DailyFeed/DivisionCard";
 import { QuestionCard } from "@/components/DailyFeed/QuestionCard";
 import { DigestCard } from "@/components/DailyFeed/DigestCard";
 import { FeedNav } from "@/components/DailyFeed/FeedNav";
+import { SCHEDULED_SITTING_DATES } from "@/app/calendar/page";
 
 export const revalidate = 3600;
 
@@ -40,7 +41,26 @@ export default async function DatePage({
       .limit(60),
   ]);
 
-  if (!sittingDay) notFound();
+  if (!sittingDay) {
+    const isScheduled = !!(SCHEDULED_SITTING_DATES[date]);
+    const dateObj = parseISO(date);
+    if (isScheduled) {
+      return (
+        <div className="text-center py-24 space-y-3">
+          <p className="text-xl font-semibold text-gray-800">
+            {format(dateObj, "EEEE d MMMM yyyy")}
+          </p>
+          <p className="text-gray-500">
+            {isFuture(dateObj)
+              ? "Parliament is scheduled to sit on this day. Check back after the sitting."
+              : "Data for this sitting day is still being processed. Check back soon."}
+          </p>
+          <a href="/calendar" className="text-sm text-blue-600 hover:underline">← Back to calendar</a>
+        </div>
+      );
+    }
+    notFound();
+  }
 
   const [{ data: digest }, { data: bills }, { data: divisions }, { data: questions }] =
     await Promise.all([
