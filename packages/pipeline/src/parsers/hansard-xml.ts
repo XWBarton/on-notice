@@ -33,18 +33,13 @@ export function parseDebates(data: OADebatesResponse): {
   const bills: ParsedBill[] = [];
   const questions: ParsedQuestion[] = [];
 
-  // Log top-level structure for debugging
-  const topKeys = Object.keys(data as unknown as Record<string, unknown>);
-  console.log(`Debate data top-level keys: ${topKeys.join(", ")}`);
-  if (data.debates) {
-    const debateKeys = Object.keys(data.debates as unknown as Record<string, unknown>);
-    console.log(`debates sub-keys: ${debateKeys.join(", ")}`);
-  }
+  // API returns array of top-level debate sections
+  const debates = Array.isArray(data) ? data : [];
 
-  const debates = toArray(data.debates?.debate);
-
+  console.log(`Parsing ${debates.length} top-level debate sections`);
   for (const debate of debates) {
     const title = getText(debate.title)?.toUpperCase() ?? "";
+    if (title) console.log(`  Section: ${title.slice(0, 60)}`);
 
     if (title.includes("QUESTIONS WITHOUT NOTICE") || title.includes("QUESTION TIME")) {
       const qs = parseQuestionDebate(debate);

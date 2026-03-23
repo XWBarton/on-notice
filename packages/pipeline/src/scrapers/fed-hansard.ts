@@ -25,12 +25,7 @@ export interface OADebateSection {
   subsection?: OADebateSection | OADebateSection[];
 }
 
-export interface OADebatesResponse {
-  date: string;
-  debates?: {
-    debate?: OADebateSection | OADebateSection[];
-  };
-}
+export type OADebatesResponse = OADebateSection[];
 
 /**
  * Fetch debates for a given date and chamber from OpenAustralia.
@@ -47,12 +42,14 @@ export async function fetchDebates(
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`OpenAustralia getDebates error: ${res.status}`);
 
-  const data = await res.json() as OADebatesResponse & { error?: string };
-  if (data.error) {
-    console.log(`OpenAustralia debates error: ${data.error}`);
+  const raw = await res.json();
+  // API returns array of debate sections, or error object
+  if (!Array.isArray(raw)) {
+    const err = (raw as Record<string, unknown>).error;
+    if (err) console.log(`OpenAustralia debates error: ${err}`);
     return null;
   }
-  return data;
+  return raw as OADebatesResponse;
 }
 
 /**
@@ -63,5 +60,5 @@ export async function checkSittingDay(
   type: "representatives" | "senate"
 ): Promise<boolean> {
   const result = await fetchDebates(date, type);
-  return result !== null && result.debates !== undefined;
+  return result !== null && result.length > 0;
 }
