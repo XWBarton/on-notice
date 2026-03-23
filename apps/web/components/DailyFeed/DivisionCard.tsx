@@ -42,7 +42,7 @@ export function DivisionCard({ division }: DivisionCardProps) {
             </span>
           </>
         )}
-        {division.occurred_at && !division.occurred_at.endsWith("T00:00:00Z") && (
+        {division.occurred_at && new Date(division.occurred_at).getUTCHours() !== 0 && (
           <span className="ml-auto text-xs text-gray-400">
             {new Date(division.occurred_at).toLocaleTimeString("en-AU", {
               hour: "2-digit",
