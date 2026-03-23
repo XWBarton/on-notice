@@ -18,6 +18,7 @@ export function DigestCard({ digest }: DigestCardProps) {
 
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+      <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2">AI Summary</p>
       {digest.lede && (
         <p className="font-semibold text-gray-900 mb-2 leading-snug">
           {stripMarkdown(digest.lede)}
