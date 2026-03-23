@@ -70,6 +70,56 @@ interface QuestionCardProps {
   };
 }
 
+// Sentence-level patterns that indicate an interruption or procedural note
+const SPEAKER_PATTERNS = [
+  /^Order[!.]?/i,
+  /^Resume your seat/i,
+  /^The (minister|member|manager|speaker|honourable member|house)/i,
+  /^(Honourable|Opposition|Government) members? interject/i,
+  /interjecting[—–-]/i,
+  /^on a point of order/i,
+];
+
+function classifySentence(s: string): "speaker" | "interjection" | "speech" {
+  const trimmed = s.trim();
+  if (!trimmed) return "speech";
+  if (SPEAKER_PATTERNS.some((p) => p.test(trimmed))) return "speaker";
+  if (/interject/i.test(trimmed) || trimmed.endsWith("—") || trimmed.endsWith("–")) return "interjection";
+  return "speech";
+}
+
+function TranscriptText({ text }: { text: string }) {
+  // Split on sentence boundaries while keeping the delimiter
+  const sentences = text.split(/(?<=[\.\!\?])\s+/);
+
+  return (
+    <div className="space-y-1">
+      {sentences.map((sentence, i) => {
+        const kind = classifySentence(sentence);
+        if (kind === "speaker") {
+          return (
+            <p key={i} className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-0.5 italic leading-relaxed">
+              {sentence.trim()}
+            </p>
+          );
+        }
+        if (kind === "interjection") {
+          return (
+            <p key={i} className="text-xs text-gray-400 italic leading-relaxed pl-2 border-l-2 border-gray-200">
+              {sentence.trim()}
+            </p>
+          );
+        }
+        return (
+          <p key={i} className="text-sm text-gray-600 leading-relaxed">
+            {sentence.trim()}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 export function QuestionCard({ question }: QuestionCardProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -120,13 +170,13 @@ export function QuestionCard({ question }: QuestionCardProps) {
           {question.question_text && (
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Question</p>
-              <p className="text-sm text-gray-600 leading-relaxed">{question.question_text}</p>
+              <TranscriptText text={question.question_text} />
             </div>
           )}
           {question.answer_text && (
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Response</p>
-              <p className="text-sm text-gray-600 leading-relaxed">{question.answer_text}</p>
+              <TranscriptText text={question.answer_text} />
             </div>
           )}
         </div>
