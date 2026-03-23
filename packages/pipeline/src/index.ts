@@ -133,59 +133,60 @@ async function run() {
     // ── Step 6: AI enrichment ─────────────────────────────────────────────────
     console.log("Step 6: AI enrichment...");
 
-    const enrichedBills = await Promise.all(
-      allBills.map(async (bill) => {
-        const summary = await summariseBill({
-          shortTitle: bill.shortTitle,
-          introducerName: bill.introducerName,
-          introducerParty: null,
-          introductionText: bill.introductionText,
-          parliament: config.name,
-          date,
+    // Sequential to avoid Claude rate limits
+    const enrichedBills: Array<{ title: string; party: string | null; summary: string | null }> = [];
+    for (const bill of allBills) {
+      const summary = await summariseBill({
+        shortTitle: bill.shortTitle,
+        introducerName: bill.introducerName,
+        introducerParty: null,
+        introductionText: bill.introductionText,
+        parliament: config.name,
+        date,
+      }).catch((e) => {
+        console.warn(`Bill summary failed: ${e.message}`);
+        return null;
+      });
+
+      const { error } = await db.from("bills").upsert(
+        {
+          parliament_id: parliamentId,
+          sitting_day_id: sittingDayId,
+          short_title: bill.shortTitle,
+          long_title: bill.longTitle,
+          bill_stage: bill.stage,
+          ai_summary: summary,
+        },
+        { onConflict: "parliament_id,bill_number" }
+      );
+      if (error) console.warn(`Bill upsert error: ${error.message}`);
+      enrichedBills.push({ title: bill.shortTitle, party: null, summary });
+    }
+
+    // Sequential to avoid Claude rate limits; skip summary if no answer text available
+    const enrichedQuestions: Array<{ asker: string; minister: string; subject: string | null; summary: string | null }> = [];
+    for (const q of classifiedQuestions) {
+      let aiSummary: string | null = null;
+
+      if (!q.isDorothyDixer && q.answerText) {
+        const result = await summariseQuestion({
+          askerName: q.askerName ?? "Unknown",
+          askerParty: "Unknown",
+          ministerName: q.ministerName ?? "Unknown",
+          ministerParty: "Unknown",
+          ministerRole: null,
+          subject: q.subject,
+          questionText: q.questionText,
+          answerText: q.answerText,
         }).catch((e) => {
-          console.warn(`Bill summary failed: ${e.message}`);
+          console.warn(`Question summary failed: ${e.message}`);
           return null;
         });
+        aiSummary = result?.summary ?? null;
+      }
 
-        const { error } = await db.from("bills").upsert(
-          {
-            parliament_id: parliamentId,
-            sitting_day_id: sittingDayId,
-            short_title: bill.shortTitle,
-            long_title: bill.longTitle,
-            bill_stage: bill.stage,
-            ai_summary: summary,
-          },
-          { onConflict: "parliament_id,bill_number" }
-        );
-        if (error) console.warn(`Bill upsert error: ${error.message}`);
-
-        return { title: bill.shortTitle, party: null, summary };
-      })
-    );
-
-    const enrichedQuestions = await Promise.all(
-      classifiedQuestions.map(async (q) => {
-        let aiSummary: string | null = null;
-
-        if (!q.isDorothyDixer) {
-          const result = await summariseQuestion({
-            askerName: q.askerName ?? "Unknown",
-            askerParty: "Unknown",
-            ministerName: q.ministerName ?? "Unknown",
-            ministerParty: "Unknown",
-            ministerRole: null,
-            subject: q.subject,
-            questionText: q.questionText,
-            answerText: q.answerText,
-          }).catch((e) => {
-            console.warn(`Question summary failed: ${e.message}`);
-            return null;
-          });
-          aiSummary = result?.summary ?? null;
-        }
-
-        const { error } = await db.from("questions").insert({
+      const { error } = await db.from("questions").upsert(
+        {
           sitting_day_id: sittingDayId,
           question_number: q.questionNumber,
           asker_id: q.askerMemberId,
@@ -195,12 +196,12 @@ async function run() {
           answer_text: q.answerText,
           is_dorothy_dixer: q.isDorothyDixer,
           ai_summary: aiSummary,
-        });
-        if (error) console.warn(`Question insert error: ${error.message}`);
-
-        return { asker: q.askerName ?? "", minister: q.ministerName ?? "", subject: q.subject, summary: aiSummary };
-      })
-    );
+        },
+        { onConflict: "sitting_day_id,question_number" }
+      );
+      if (error) console.warn(`Question upsert error: ${error.message}`);
+      enrichedQuestions.push({ asker: q.askerName ?? "", minister: q.ministerName ?? "", subject: q.subject, summary: aiSummary });
+    }
 
     // ── Step 7: Daily digest ──────────────────────────────────────────────────
     console.log("Step 7: Generating daily digest...");
