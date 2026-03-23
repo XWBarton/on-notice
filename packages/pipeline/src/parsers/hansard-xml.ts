@@ -48,6 +48,7 @@ interface OASection {
   body?: string;
   htype?: string;
   gid?: string;
+  htime?: string | null;
   excerpt?: string;
 }
 
