@@ -95,6 +95,11 @@ async function run() {
         const speech = await fetchSpeech(q.gid, oaType as "representatives" | "senate").catch(() => null);
         if (!speech) return q;
 
+        // Debug: log raw structure for first question only
+        if (q.questionNumber === 1) {
+          console.log(`Speech sample: ${JSON.stringify(speech).slice(0, 500)}`);
+        }
+
         // Extract speaker name/party and full speech body from nested speeches
         const speeches = speech.speeches ?? [];
         const firstSpeaker = speeches[0]?.speaker ?? speech.speaker;
