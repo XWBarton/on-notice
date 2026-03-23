@@ -229,7 +229,7 @@ async function run() {
     for (const q of classifiedQuestions) {
       let aiSummary: string | null = null;
 
-      if (!q.isDorothyDixer && q.answerText) {
+      if (q.answerText) {
         await new Promise((r) => setTimeout(r, 1000)); // avoid Claude rate limits
         const result = await summariseQuestion({
           askerName: q.askerName ?? "Unknown",
