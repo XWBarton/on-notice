@@ -82,6 +82,15 @@ export async function classifyQuestion(
     };
   }
 
+  // Can't classify without at least asker info — skip AI
+  if (!askerName || !ministerName) {
+    return {
+      isDorothyDixer: false,
+      askerMemberId: asker?.id ?? null,
+      ministerMemberId: minister?.id ?? null,
+    };
+  }
+
   // Ambiguous — use AI fallback
   const aiResult = await detectDorothyDixerAI({
     askerName: askerName ?? "Unknown",
