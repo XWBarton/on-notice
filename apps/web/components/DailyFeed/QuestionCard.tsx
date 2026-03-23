@@ -21,7 +21,7 @@ interface QuestionCardProps {
   };
 }
 
-const PREVIEW_LENGTH = 200;
+const PREVIEW_LENGTH = 120;
 
 export function QuestionCard({ question }: QuestionCardProps) {
   const fullText = question.ai_summary ?? question.question_text ?? null;
