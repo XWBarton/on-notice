@@ -1,141 +1,156 @@
 "use client";
 
 import { useState } from "react";
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths } from "date-fns";
+import {
+  format, parseISO, startOfMonth, endOfMonth,
+  eachDayOfInterval, getDay, addMonths, subMonths, isToday, isFuture,
+} from "date-fns";
 
 interface CalendarViewProps {
-  dataMap: Record<string, string[]>;         // date → parliaments with complete data
-  scheduledDates: Record<string, string[]>;  // date → parliaments scheduled to sit
+  dataMap: Record<string, string[]>;
+  scheduledDates: Record<string, string[]>;
 }
 
 export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
-  const today = new Date();
-  const [currentMonth, setCurrentMonth] = useState(startOfMonth(today));
+  const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date()));
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-  const startPad = (getDay(monthStart) + 6) % 7; // Monday = 0
-
-  const monthKey = format(currentMonth, "yyyy-MM");
-  const hasAnyData = Object.keys(dataMap).some((d) => d.startsWith(monthKey));
-  const hasAnyScheduled = Object.keys(scheduledDates).some((d) => d.startsWith(monthKey));
+  const startPad = (getDay(monthStart) + 6) % 7;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Sitting Calendar</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
-            className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition-colors"
-            aria-label="Previous month"
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors text-lg"
           >
-            ←
+            ‹
           </button>
-          <span className="text-base font-semibold w-36 text-center">
+          <span className="text-sm font-semibold w-28 text-center text-gray-700">
             {format(currentMonth, "MMMM yyyy")}
           </span>
           <button
             onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
-            className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition-colors"
-            aria-label="Next month"
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors text-lg"
           >
-            →
+            ›
           </button>
         </div>
       </div>
 
-      {!hasAnyData && !hasAnyScheduled && (
-        <p className="text-gray-400 text-sm text-center py-8">No sitting days this month.</p>
-      )}
-
-      <div className="grid grid-cols-7 gap-1.5 text-center">
-        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-          <div key={d} className="text-xs text-gray-400 font-medium pb-1">{d}</div>
+      {/* Day headers */}
+      <div className="grid grid-cols-7 text-center">
+        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+          <div key={i} className="text-xs text-gray-300 font-medium pb-2">{d}</div>
         ))}
 
-        {Array.from({ length: startPad }).map((_, i) => (
-          <div key={`pad-${i}`} />
-        ))}
+        {/* Padding */}
+        {Array.from({ length: startPad }).map((_, i) => <div key={`p${i}`} />)}
 
+        {/* Days */}
         {days.map((day) => {
           const dateStr = format(day, "yyyy-MM-dd");
           const isWeekend = getDay(day) === 0 || getDay(day) === 6;
-          const isToday = dateStr === format(today, "yyyy-MM-dd");
+          const todayDate = isToday(day);
+          const future = isFuture(day);
+
           const dataParls = dataMap[dateStr] ?? [];
-          const scheduledParls = scheduledDates[dateStr] ?? [];
+          const scheduled = scheduledDates[dateStr] ?? [];
 
-          const hasData = dataParls.length > 0;
-          const isScheduled = scheduledParls.length > 0 && !hasData;
-          const isPast = day < today && !hasData;
+          const hasHorData = dataParls.includes("fed_hor");
+          const hasSenData = dataParls.includes("fed_sen");
+          const hasAnyData = hasHorData || hasSenData;
 
-          const hasHor = dataParls.includes("fed_hor");
-          const hasSen = dataParls.includes("fed_sen");
-          const hasBoth = hasHor && hasSen;
+          const scheduledHor = !hasHorData && scheduled.includes("fed_hor");
+          const scheduledSen = !hasSenData && scheduled.includes("fed_sen");
+          const hasAnyScheduled = scheduledHor || scheduledSen;
 
-          const scheduledHor = scheduledParls.includes("fed_hor");
-          const scheduledSen = scheduledParls.includes("fed_sen");
-          const scheduledBoth = scheduledHor && scheduledSen;
+          const isClickable = hasAnyData || hasAnyScheduled;
 
-          if (hasData) {
+          const dateNum = (
+            <span className={`text-sm leading-none ${
+              todayDate
+                ? "font-bold text-gray-900"
+                : isWeekend
+                ? "text-gray-200"
+                : hasAnyData
+                ? "text-gray-800 font-medium"
+                : hasAnyScheduled
+                ? "text-gray-500"
+                : "text-gray-300"
+            }`}>
+              {format(day, "d")}
+            </span>
+          );
+
+          const dots = (
+            <div className="flex gap-0.5 mt-1 justify-center">
+              {/* House dot */}
+              {(hasHorData || scheduledHor) && (
+                <span
+                  className="w-1.5 h-1.5 rounded-full inline-block"
+                  style={{
+                    backgroundColor: hasHorData ? "#006945" : "#00694540",
+                    border: scheduledHor ? "1px solid #006945" : "none",
+                  }}
+                />
+              )}
+              {/* Senate dot */}
+              {(hasSenData || scheduledSen) && (
+                <span
+                  className="w-1.5 h-1.5 rounded-full inline-block"
+                  style={{
+                    backgroundColor: hasSenData ? "#C1121F" : "#C1121F40",
+                    border: scheduledSen ? "1px solid #C1121F" : "none",
+                  }}
+                />
+              )}
+            </div>
+          );
+
+          const inner = (
+            <div className="flex flex-col items-center py-1.5">
+              {dateNum}
+              {dots}
+            </div>
+          );
+
+          if (isClickable) {
             return (
               <a
                 key={dateStr}
                 href={`/${dateStr}`}
-                className="aspect-square flex flex-col items-center justify-center rounded-lg hover:opacity-80 transition-opacity"
-                style={{
-                  background: hasBoth
-                    ? "linear-gradient(135deg, #006945 50%, #C1121F 50%)"
-                    : hasHor ? "#006945" : "#C1121F",
-                }}
-                title={`${format(day, "d MMMM yyyy")} — ${hasBoth ? "House & Senate" : hasHor ? "House of Representatives" : "Senate"}`}
+                className={`rounded-lg hover:bg-gray-50 transition-colors ${todayDate ? "ring-1 ring-gray-200" : ""}`}
+                title={format(day, "d MMMM yyyy")}
               >
-                <span className="text-sm font-semibold text-white">{format(day, "d")}</span>
-              </a>
-            );
-          }
-
-          if (isScheduled) {
-            return (
-              <a
-                key={dateStr}
-                href={`/${dateStr}`}
-                className="aspect-square flex flex-col items-center justify-center rounded-lg hover:opacity-70 transition-opacity"
-                style={{
-                  background: scheduledBoth
-                    ? "linear-gradient(135deg, #00694520 50%, #C1121F20 50%)"
-                    : scheduledHor ? "#00694520" : "#C1121F20",
-                  border: `1.5px dashed ${scheduledBoth ? "#006945" : scheduledHor ? "#006945" : "#C1121F"}`,
-                }}
-                title={`${format(day, "d MMMM yyyy")} — Scheduled: ${scheduledBoth ? "House & Senate" : scheduledHor ? "House of Representatives" : "Senate"}`}
-              >
-                <span className={`text-sm font-medium ${scheduledHor ? "text-[#006945]" : "text-[#C1121F]"}`}>
-                  {format(day, "d")}
-                </span>
+                {inner}
               </a>
             );
           }
 
           return (
-            <div key={dateStr} className="aspect-square flex items-center justify-center">
-              <span className={`text-sm ${isToday ? "font-bold text-gray-900" : isWeekend || isPast ? "text-gray-200" : "text-gray-400"}`}>
-                {format(day, "d")}
-              </span>
+            <div key={dateStr} className={`rounded-lg ${todayDate ? "ring-1 ring-gray-200" : ""}`}>
+              {inner}
             </div>
           );
         })}
       </div>
 
-      <div className="flex flex-wrap gap-5 text-xs text-gray-500 pt-1">
-        <span className="flex items-center gap-2">
-          <span className="w-4 h-4 rounded-sm bg-[#006945] inline-block" /> House — data available
+      {/* Legend */}
+      <div className="flex gap-5 text-xs text-gray-400 pt-1">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[#006945] inline-block" /> House
         </span>
-        <span className="flex items-center gap-2">
-          <span className="w-4 h-4 rounded-sm bg-[#C1121F] inline-block" /> Senate — data available
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[#C1121F] inline-block" /> Senate
         </span>
-        <span className="flex items-center gap-2">
-          <span className="w-4 h-4 rounded-sm border-2 border-dashed border-[#006945] inline-block" /> Scheduled sitting
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-gray-200 inline-block" /> Scheduled
         </span>
       </div>
     </div>
