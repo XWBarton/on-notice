@@ -38,6 +38,6 @@ export async function fetchDivisionsForDate(
   if (res.status === 404) return [];
   if (!res.ok) throw new Error(`TVFY API error: ${res.status}`);
 
-  const data = await res.json();
+  const data = await res.json() as TVFYDivision[];
   return data ?? [];
 }

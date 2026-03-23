@@ -31,18 +31,17 @@ export async function findHansardDocuments(
   if (res.status === 404) return [];
   if (!res.ok) throw new Error(`APH Hansard search failed: ${res.status}`);
 
-  const data = await res.json();
-  const results = data.value ?? data.results ?? [];
+  const data = await res.json() as Record<string, unknown>;
+  const results = (data.value ?? data.results ?? []) as Record<string, unknown>[];
 
-  return results
-    .filter((r: { type?: string; chamber?: string }) =>
-      r.type === "hansard" || r.chamber === chamber
-    )
-    .map((r: { id: string; title: string; date: string; chamber: string }) => ({
+  type RawResult = { type?: string; chamber?: string; id: string; title: string; date: string };
+  return (results as RawResult[])
+    .filter((r) => r.type === "hansard" || r.chamber === chamber)
+    .map((r) => ({
       id: r.id,
       title: r.title,
       date: r.date,
-      chamber: r.chamber,
+      chamber: chamber,
       xmlUrl: `${APH_HANSARD_API}/link/?id=chamber/hansard${chamber === "reps" ? "r" : "s"}/${r.id}/&linktype=xml`,
     }));
 }
