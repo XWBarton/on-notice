@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Footer } from "@/components/Footer";
 
 export const metadata: Metadata = {
   title: "On Notice — Australian Parliament Daily Feed",
@@ -35,14 +36,7 @@ export default function RootLayout({
         <main className="mx-auto max-w-3xl px-4 py-8">
           {children}
         </main>
-        <footer className="border-t border-gray-200 mt-16">
-          <div className="mx-auto max-w-3xl px-4 py-6 text-sm text-gray-500 flex justify-between">
-            <span>On Notice — Australian Parliament Feed</span>
-            <a href="/podcast/feed.xml" className="hover:text-gray-700">
-              RSS Feed
-            </a>
-          </div>
-        </footer>
+        <Footer />
       </body>
     </html>
   );
