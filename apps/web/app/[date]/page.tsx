@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase";
-import { format, parseISO, isFuture } from "date-fns";
+import { format, parseISO, isFuture, differenceInDays } from "date-fns";
 import { notFound } from "next/navigation";
 import { BillCard } from "@/components/DailyFeed/BillCard";
 import { DivisionCard } from "@/components/DailyFeed/DivisionCard";
@@ -80,9 +80,17 @@ export default async function DatePage({
     ]);
 
   const availableDates = (allDates ?? []).map((d) => d.sitting_date as string);
+  const daysSinceSitting = differenceInDays(new Date(), parseISO(date));
+  const inRecess = daysSinceSitting > 1;
 
   return (
     <div>
+      {inRecess && (
+        <div className="mb-6 text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+          Parliament is currently in recess. Showing the most recent sitting day.{" "}
+          <a href="/calendar" className="text-blue-600 hover:underline">View sitting calendar →</a>
+        </div>
+      )}
       <FeedNav
         currentDate={date}
         currentParliament={parliamentId}
