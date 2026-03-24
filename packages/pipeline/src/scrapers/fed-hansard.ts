@@ -38,7 +38,18 @@ export async function fetchDebates(
   const apiKey = process.env.OPEN_AUSTRALIA_API_KEY;
   const url = `${OPEN_AUSTRALIA_API}/getDebates?type=${type}&date=${date}&key=${apiKey}&output=json`;
 
-  const res = await fetch(url);
+  let res: Response | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+      if (res.ok || res.status === 404) break;
+    } catch (e) {
+      if (attempt === 3) throw e;
+      console.warn(`  OA debates fetch attempt ${attempt} failed, retrying...`);
+      await new Promise((r) => setTimeout(r, attempt * 3000));
+    }
+  }
+  if (!res) throw new Error("OpenAustralia getDebates: all retries failed");
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`OpenAustralia getDebates error: ${res.status}`);
 

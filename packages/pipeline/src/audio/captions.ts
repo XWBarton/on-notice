@@ -23,6 +23,9 @@ const QUESTIONER_RE = /(?:give\s+(?:a\s+|the\s+)?call|recall|the\s+call|give\s+m
 /** Matches when Speaker calls a minister to answer */
 const ANSWERER_RE = /\bcall\s+to\s+the\s+(?:prime\s+minister|treasurer|minister(?:\s+for)?|deputy\s+prime\s+minister|assistant\s+treasurer)/i;
 
+/** Matches order/warning calls — "Order! The member for X will resume" — not a question start */
+const ORDER_CALL_RE = /\border[!.].*\bmember\s+for\b|\bmember\s+for\b.*\b(?:resume|warned?|withdraw|order)\b/i;
+
 /** Extract electorate name from a questioner call window text, e.g. "member for Griffith" → "Griffith" */
 const ELECTORATE_RE = /\bmember\s+for\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)?)?)/;
 
@@ -120,7 +123,7 @@ function findQuestionStarts(
       .map((e) => e.text)
       .join(" ");
 
-    if (QUESTIONER_RE.test(windowText) && !ANSWERER_RE.test(windowText)) {
+    if (QUESTIONER_RE.test(windowText) && !ANSWERER_RE.test(windowText) && !ORDER_CALL_RE.test(windowText)) {
       if (sec - lastSec > 60) {
         lastSec = sec;
         const recordingRelative = sec - vttOffset;

@@ -23,8 +23,20 @@ export async function syncFederalMembers(parliamentId: "fed_hor" | "fed_sen") {
   const endpoint = parliamentId === "fed_hor" ? "getRepresentatives" : "getSenators";
 
   const url = `${OPEN_AUSTRALIA_API}/${endpoint}?key=${apiKey}&output=json`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`OpenAustralia API error: ${res.status}`);
+
+  // Retry up to 3 times with backoff (OA can be flaky)
+  let res: Response | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+      if (res.ok) break;
+    } catch (e) {
+      if (attempt === 3) throw e;
+      console.warn(`  OA members fetch attempt ${attempt} failed, retrying...`);
+      await new Promise((r) => setTimeout(r, attempt * 3000));
+    }
+  }
+  if (!res || !res.ok) throw new Error(`OpenAustralia API error: ${res?.status ?? "timeout"}`);
 
   const raw = await res.json();
   // API returns array directly

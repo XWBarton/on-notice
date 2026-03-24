@@ -54,7 +54,9 @@ async function run() {
   // ── Step 1: Sync members (weekly) ───────────────────────────────────────────
   console.log("Step 1: Syncing members...");
   if (config.jurisdiction === "federal") {
-    await syncFederalMembers(parliamentId as "fed_hor" | "fed_sen");
+    await syncFederalMembers(parliamentId as "fed_hor" | "fed_sen").catch((e) => {
+      console.warn(`Member sync failed (OA may be down): ${e.message} — continuing with existing member data`);
+    });
   }
   if (values["members-only"]) {
     console.log("Members-only mode, exiting.");
