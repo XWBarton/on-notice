@@ -44,15 +44,16 @@ export async function callClaudeText(
   });
 }
 
-/** Call Claude and parse JSON response. Throws if response is not valid JSON. */
+/** Call Claude and parse JSON response. Handles both objects and arrays. */
 export async function callClaude<T>(
   model: string,
   system: string,
-  user: string
+  user: string,
+  maxTokens = 512
 ): Promise<T> {
-  const text = await callClaudeText(model, system, user);
-  // Extract JSON from response (handles markdown code blocks)
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  const text = await callClaudeText(model, system, user, maxTokens);
+  // Extract JSON from response (handles markdown code blocks, arrays or objects)
+  const jsonMatch = text.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
   if (!jsonMatch) throw new Error(`No JSON in Claude response: ${text.slice(0, 200)}`);
   return JSON.parse(jsonMatch[0]) as T;
 }

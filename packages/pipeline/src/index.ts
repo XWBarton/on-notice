@@ -25,7 +25,8 @@ import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloade
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { generateIntroClip, introText } from "./audio/tts";
 import { uploadEpisode, uploadClip } from "./audio/uploader";
-import { extractQuestionTimestamps } from "./audio/captions";
+import { buildQtTranscript } from "./audio/captions";
+import { extractTimestampsWithAI } from "./ai/timestamp-questions";
 import * as fs from "node:fs";
 
 async function run() {
@@ -360,111 +361,54 @@ async function run() {
             );
             console.log(`  Downloaded: ${rawAudioPath}`);
 
-            // 8d: Map Hansard questions to audio offsets
-            // Questions have htime (wall clock). Recording start gives us the offset.
-            const downloadStartSec = Math.max(0, qtOffsets.startSec - 30); // 30s buffer we added
-
-            const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
-
-            // Use ParlView captions to get exact question start timestamps
-            const captionTimestamps = await extractQuestionTimestamps(
-              parlviewVideo,
-              qtOffsets.startSec,
-              qtOffsets.endSec
-            );
-
-            // captionTimestamps are recording-relative (from mediaSom).
-            // Convert to file-relative (from start of downloaded audio).
+            // 8d: Map Hansard questions to audio timestamps via AI caption parsing
             const qtAudioStart = 30; // 30s buffer before QT start in the downloaded file
             const qtAudioEnd = qtAudioStart + (qtOffsets.endSec - qtOffsets.startSec);
 
-            // Convert caption events to file-relative seconds
-            const captionEvents = captionTimestamps
-              .map((e) => ({ ...e, sec: e.sec - downloadStartSec }))
-              .filter((e) => e.sec > 0 && e.sec < qtAudioEnd + 60);
+            const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
 
-            const sortedStarts = captionEvents.map((e) => e.sec).sort((a, b) => a - b);
+            // Build condensed QT transcript and ask Sonnet for question timestamps
+            const qtTranscript = await buildQtTranscript(parlviewVideo, qtOffsets.startSec, qtOffsets.endSec);
+            const aiTimestamps = qtTranscript
+              ? await extractTimestampsWithAI(
+                  qtTranscript,
+                  realQuestionsForAudio.map((q) => ({
+                    questionNumber: q.questionNumber!,
+                    askerName: q.askerName ?? null,
+                    askerParty: q.askerParty ?? null,
+                  }))
+                ).catch((e) => { console.warn(`  AI timestamp extraction failed: ${e.message}`); return []; })
+              : [];
 
-            // Build electorate → file-relative timestamp lookup from caption events
-            const electorateToTimestamp = new Map<string, number>();
-            for (const e of captionEvents) {
-              if (e.electorate) {
-                const key = e.electorate.toLowerCase();
-                if (!electorateToTimestamp.has(key)) electorateToTimestamp.set(key, e.sec);
-              }
-            }
+            console.log(`  AI identified ${aiTimestamps.length}/${realQuestionsForAudio.length} question timestamps`);
 
-            // Build member electorate lookup: member_id → electorate (normalised)
-            const memberElectorateMap = new Map<string, string>();
-            for (const m of members ?? []) {
-              if (m.electorate) memberElectorateMap.set(m.id, m.electorate.toLowerCase());
-            }
+            // Convert AI timestamps (secFromQtStart) to file-relative seconds, enforce monotonic order
+            const assignedStarts = new Map<number, number>();
+            const aiMap = new Map(aiTimestamps.map((t) => [t.questionNumber, t.secFromQtStart]));
+            let minT = qtAudioStart;
 
-            const allQuestionsInOrder = classifiedQuestions.filter((q) => q.questionNumber);
-            const nTotal = allQuestionsInOrder.length;
-            const qtDuration = qtAudioEnd - qtAudioStart;
+            for (const q of realQuestionsForAudio) {
+              const secFromQt = aiMap.get(q.questionNumber!);
+              const fileRelative = secFromQt != null ? qtAudioStart + secFromQt : null;
 
-            const usedIdx = new Set<number>();
-            const assignedStarts = new Map<number, number>(); // questionNumber → start time
-            let electorateMatchCount = 0;
-
-            const realInOrder = realQuestionsForAudio
-              .map((q) => ({ q, idx: allQuestionsInOrder.findIndex((aq) => aq.questionNumber === q.questionNumber) }))
-              .filter(({ idx }) => idx >= 0)
-              .sort((a, b) => a.idx - b.idx);
-
-            // Process in QT order — enforce monotonic timestamps so clips never overlap
-            let minT = qtAudioStart; // each question must start after this
-
-            for (const { q, idx } of realInOrder) {
-              const askerElectorate = q.askerMemberId ? memberElectorateMap.get(q.askerMemberId) : null;
-              const electorateMatch = askerElectorate ? electorateToTimestamp.get(askerElectorate) : null;
-
-              // 1. Electorate match — only use if it's after the previous question
-              if (electorateMatch != null && electorateMatch >= minT) {
-                // Mark the corresponding sortedStarts index as used
-                const k = sortedStarts.findIndex((t, i) => !usedIdx.has(i) && Math.abs(t - electorateMatch) < 1);
-                if (k >= 0) usedIdx.add(k);
-                assignedStarts.set(q.questionNumber!, electorateMatch);
-                minT = electorateMatch + 30;
-                electorateMatchCount++;
-                console.log(`  Q${q.questionNumber} matched by electorate (${askerElectorate}): ${Math.floor(electorateMatch/60)}m${Math.round(electorateMatch%60)}s`);
-                continue;
-              }
-
-              // 2. Nearest unused caption timestamp after minT, within 8 minutes of expected position
-              const expectedT = Math.max(minT, qtAudioStart + (idx / Math.max(nTotal - 1, 1)) * qtDuration);
-              let best = -1;
-              let bestDist = 8 * 60;
-              for (let k = 0; k < sortedStarts.length; k++) {
-                if (usedIdx.has(k) || sortedStarts[k] < minT) continue;
-                const dist = Math.abs(sortedStarts[k] - expectedT);
-                if (dist < bestDist) { bestDist = dist; best = k; }
-              }
-              if (best >= 0) {
-                usedIdx.add(best);
-                assignedStarts.set(q.questionNumber!, sortedStarts[best]);
-                minT = sortedStarts[best] + 30;
+              if (fileRelative != null && fileRelative >= minT && fileRelative <= qtAudioEnd) {
+                assignedStarts.set(q.questionNumber!, fileRelative);
+                minT = fileRelative + 30;
               } else {
-                assignedStarts.set(q.questionNumber!, expectedT);
-                minT = expectedT + 30;
+                // Fallback: evenly space remaining questions
+                assignedStarts.set(q.questionNumber!, minT);
+                minT += 30;
               }
             }
 
             const questionStarts = realQuestionsForAudio.map(
               (q) => assignedStarts.get(q.questionNumber!) ?? qtAudioStart
             );
-            console.log(`  Timestamp matching: ${electorateMatchCount} electorate, ${usedIdx.size} nearest-neighbour, ${realQuestionsForAudio.length - electorateMatchCount - usedIdx.size} interpolated`);
 
-            // Ends: start of the next event (real or Dorothy Dixer) from caption timestamps, or qtAudioEnd
-            const questionEnds = realQuestionsForAudio.map((q, i) => {
-              const start = questionStarts[i];
-              // Next caption timestamp after this question's start
-              const nextTs = sortedStarts.find((t) => t > start + 30); // must be >30s later
-              const nextRealStart = questionStarts[i + 1];
-              if (nextTs && nextRealStart) return Math.min(nextTs, nextRealStart);
-              return nextTs ?? nextRealStart ?? qtAudioEnd;
-            });
+            // Ends: start of next question, or qtAudioEnd for the last
+            const questionEnds = realQuestionsForAudio.map((q, i) =>
+              questionStarts[i + 1] ?? qtAudioEnd
+            );
 
             const segments: QuestionSegment[] = [];
 
