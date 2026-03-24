@@ -341,7 +341,8 @@ async function run() {
           if (!qtOffsets) {
             console.log("  No Question Time segment found in ParlView metadata — skipping audio");
           } else {
-            console.log(`  Question Time: ${Math.round(qtOffsets.startSec)}s → ${Math.round(qtOffsets.endSec)}s`);
+            console.log(`  ParlView segments (${parlviewVideo.segments.length}): ${parlviewVideo.segments.map(s => s.segmentTitle).join(", ")}`);
+          console.log(`  Question Time: ${Math.round(qtOffsets.startSec)}s → ${Math.round(qtOffsets.endSec)}s`);
 
             // 8c: Download Question Time audio
             const workDir = createAudioWorkDir(date, parliamentId);
