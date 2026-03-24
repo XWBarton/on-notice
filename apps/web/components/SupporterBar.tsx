@@ -1,5 +1,5 @@
 const GOAL = 30; // AUD per month
-const BMAC_URL = "https://buymeacoffee.com/onnotice"; // update to your BMAC page
+const BMAC_URL = "https://buymeacoffee.com/xbarton/membership";
 
 interface SupporterBarProps {
   totalMonthly: number;
