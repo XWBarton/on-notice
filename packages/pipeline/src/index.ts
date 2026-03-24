@@ -355,14 +355,21 @@ async function run() {
 
             // 8d: Map Hansard questions to audio offsets
             // Questions have htime (wall clock). Recording start gives us the offset.
-            const recordingStart = new Date(parlviewVideo.recordingFrom).getTime() / 1000;
             const downloadStartSec = Math.max(0, qtOffsets.startSec - 30); // 30s buffer we added
 
             const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
 
-            // Build segments using Hansard division times as a proxy for question times
-            // Questions don't have exact timecodes in OA, so we space them evenly across
-            // the Question Time window as a fallback, then refine with htime if available
+            // Convert hansardTime (HH:MM:SS wall clock) to file offset using mediaSom
+            const somSec = timecodeToSeconds(parlviewVideo.mediaSom);
+            const htimeToOffset = (htime: string | null): number | null => {
+              if (!htime) return null;
+              const parts = htime.split(":").map(Number);
+              if (parts.length < 2) return null;
+              const [h, m, s = 0] = parts;
+              return h * 3600 + m * 60 + s - somSec;
+            };
+
+            // Build start times: use hansardTime if available, else evenly space
             const qtDuration = qtOffsets.endSec - qtOffsets.startSec;
             const segmentDuration = qtDuration / Math.max(realQuestionsForAudio.length, 1);
 
@@ -370,10 +377,18 @@ async function run() {
 
             for (let i = 0; i < realQuestionsForAudio.length; i++) {
               const q = realQuestionsForAudio[i];
+              const next = realQuestionsForAudio[i + 1];
 
-              // Evenly spaced fallback within Question Time window
-              const startSec = qtOffsets.startSec + i * segmentDuration;
-              const endSec = startSec + segmentDuration;
+              // Use hansardTime for precise start; next question's time as end
+              const htimeStart = htimeToOffset(q.hansardTime ?? null);
+              const htimeEnd = next ? htimeToOffset(next.hansardTime ?? null) : null;
+
+              const startSec = htimeStart !== null && htimeStart > 0
+                ? htimeStart
+                : qtOffsets.startSec + i * segmentDuration;
+              const endSec = htimeEnd !== null && htimeEnd > startSec
+                ? htimeEnd
+                : startSec + segmentDuration;
 
               // Generate TTS intro clip
               const introPath = `${workDir}/intro-q${q.questionNumber}.mp3`;
