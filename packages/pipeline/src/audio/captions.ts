@@ -9,13 +9,34 @@
  * VTT timestamps are local to the HLS file (seconds from fileSom).
  * We convert them to seconds from the recording start (mediaSom) so they can be
  * used as offsets into the downloaded audio file.
+ *
+ * Also extracts the electorate name (for questioners) or minister title (for answerers)
+ * from the caption text so callers can match timestamps to known questions by electorate.
  */
 
 import type { ParlViewVideo } from "../scrapers/parlview";
 import { timecodeToSeconds } from "../scrapers/parlview";
 
+/** Matches when Speaker calls a questioner (opposition/crossbench member) */
 const QUESTIONER_RE = /(?:give\s+(?:a\s+|the\s+)?call|recall|the\s+call|give\s+me\s+a\s+call|\bcall)\s+to\s+the\s+(?:honourable\s+(?:the\s+)?)?(?:member\s+for\b|leader\s+of\s+the\s+opposition|deputy\s+leader|manager\s+of\s+opposition)/i;
+
+/** Matches when Speaker calls a minister to answer */
 const ANSWERER_RE = /\bcall\s+to\s+the\s+(?:prime\s+minister|treasurer|minister(?:\s+for)?|deputy\s+prime\s+minister|assistant\s+treasurer)/i;
+
+/** Extract electorate name from a questioner call window text, e.g. "member for Griffith" → "Griffith" */
+const ELECTORATE_RE = /\bmember\s+for\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)?)?)/;
+
+/** Extract minister role from an answerer call window text */
+const MINISTER_ROLE_RE = /\bcall\s+to\s+the\s+(prime\s+minister|treasurer|assistant\s+treasurer|deputy\s+prime\s+minister|minister\s+for\s+([A-Z][a-zA-Z\s,]+?)(?:\.|,|\?|\s{2}|$))/i;
+
+export interface CaptionEvent {
+  /** Recording-relative seconds (from mediaSom / recording start) */
+  sec: number;
+  /** Electorate name if this is a questioner call, e.g. "Griffith", "New England" */
+  electorate: string | null;
+  /** "leader_of_opposition" | "deputy_leader" | "manager_of_opposition" if applicable */
+  special: string | null;
+}
 
 interface VttEntry {
   sec: number;
@@ -60,23 +81,31 @@ function parseVtt(vttContent: string): VttEntry[] {
 }
 
 /**
- * Find "call to questioner" timestamps in a sorted+deduped entry list.
- * Returns file-relative seconds (from recording start / mediaSom).
- *
- * @param entries        Sorted, deduped VTT entries (sec = seconds from fileSom)
- * @param fileSomSec     Seconds from midnight for the HLS file start
- * @param mediaSomSec    Seconds from midnight for mediaSom (recording start)
- * @param qtStartLocal   QT start in VTT local seconds (to filter out pre-QT matches)
+ * Extract electorate or special role from a questioner call window text.
+ */
+function extractQuestioner(windowText: string): Pick<CaptionEvent, "electorate" | "special"> {
+  if (/leader\s+of\s+the\s+opposition/i.test(windowText)) return { electorate: null, special: "leader_of_opposition" };
+  if (/deputy\s+leader/i.test(windowText)) return { electorate: null, special: "deputy_leader" };
+  if (/manager\s+of\s+opposition/i.test(windowText)) return { electorate: null, special: "manager_of_opposition" };
+
+  const m = ELECTORATE_RE.exec(windowText);
+  if (m) return { electorate: m[1].trim(), special: null };
+  return { electorate: null, special: null };
+}
+
+/**
+ * Find "call to questioner" events in a sorted+deduped entry list.
+ * Returns recording-relative seconds with extracted electorate/special info.
  */
 function findQuestionStarts(
   entries: VttEntry[],
   fileSomSec: number,
   mediaSomSec: number,
   qtStartLocal: number
-): number[] {
-  const vttOffset = mediaSomSec - fileSomSec; // VTT local sec → recording-relative sec: subtract this
+): CaptionEvent[] {
+  const vttOffset = mediaSomSec - fileSomSec;
 
-  const results: number[] = [];
+  const results: CaptionEvent[] = [];
   let lastSec = -999;
   let j = 0;
 
@@ -95,7 +124,7 @@ function findQuestionStarts(
       if (sec - lastSec > 60) {
         lastSec = sec;
         const recordingRelative = sec - vttOffset;
-        results.push(recordingRelative);
+        results.push({ sec: recordingRelative, ...extractQuestioner(windowText) });
       }
     }
   }
@@ -140,19 +169,14 @@ async function fetchSubtitleSegments(
 
 /**
  * Main entry point.
- * Returns recording-relative timestamps (seconds from mediaSom) for each question start.
- * These can be used directly as segment start times in the audio editor.
- *
- * @param video          ParlView video metadata
- * @param qtStartSec     QT start in recording-relative seconds (from questionTimeOffsets)
- * @param qtEndSec       QT end in recording-relative seconds
- * @param downloadStartSec  Where the downloaded audio file starts (recording-relative)
+ * Returns recording-relative CaptionEvents for each detected question start,
+ * including the electorate name where the Speaker named it.
  */
 export async function extractQuestionTimestamps(
   video: ParlViewVideo,
   qtStartSec: number,
   qtEndSec: number
-): Promise<number[]> {
+): Promise<CaptionEvent[]> {
   if (!video.hlsUrl || !video.fileSom) {
     console.warn("  Caption extraction: missing hlsUrl or fileSom");
     return [];
@@ -185,20 +209,18 @@ export async function extractQuestionTimestamps(
     return [];
   }
 
-  const firstSeg = segLines[0].trim(); // e.g. segment_1774219759_0.vtt
+  const firstSeg = segLines[0].trim();
   const segMatch = firstSeg.match(/^(.+_)(\d+)(\.vtt)$/);
   if (!segMatch) {
     console.warn(`  Caption extraction: unexpected segment name format: ${firstSeg}`);
     return [];
   }
-  const segPrefix = segMatch[1]; // "segment_1774219759_"
-  const segSuffix = segMatch[3]; // ".vtt"
+  const segPrefix = segMatch[1];
+  const segSuffix = segMatch[3];
 
-  // Parse approximate segment duration from #EXTINF lines
   const extinfMatch = m3u8Text.match(/#EXTINF:([\d.]+)/);
   const segDuration = extinfMatch ? parseFloat(extinfMatch[1]) : 3.84;
 
-  // Calculate which segment indices cover the QT window (with 60s buffer)
   const startIdx = Math.max(0, Math.floor((qtStartLocal - 60) / segDuration));
   const endIdx = Math.ceil((qtEndLocal + 60) / segDuration);
   const segTemplate = `${segPrefix}{{N}}${segSuffix}`;
@@ -211,8 +233,12 @@ export async function extractQuestionTimestamps(
 
   console.log(`  Parsed ${entries.length} VTT entries`);
 
-  const timestamps = findQuestionStarts(entries, fileSomSec, mediaSomSec, qtStartLocal);
-  console.log(`  Found ${timestamps.length} question starts: ${timestamps.map((s) => `${Math.floor(s / 60)}m${Math.round(s % 60)}s`).join(", ")}`);
+  const events = findQuestionStarts(entries, fileSomSec, mediaSomSec, qtStartLocal);
+  console.log(`  Found ${events.length} question starts:`);
+  for (const e of events) {
+    const label = e.electorate ?? e.special ?? "unknown";
+    console.log(`    ${Math.floor(e.sec / 60)}m${Math.round(e.sec % 60)}s — ${label}`);
+  }
 
-  return timestamps;
+  return events;
 }

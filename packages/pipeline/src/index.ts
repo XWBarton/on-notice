@@ -146,7 +146,7 @@ async function run() {
     // Get member lookup function
     const { data: members } = await db
       .from("members")
-      .select("id, name_last, name_first, party_id, parties(short_name)")
+      .select("id, name_last, name_first, electorate, party_id, parties(short_name)")
       .eq("parliament_id", parliamentId);
 
     const memberLookup = (lastName: string, firstName: string, party: string): string | null => {
@@ -376,36 +376,54 @@ async function run() {
             const qtAudioStart = 30; // 30s buffer before QT start in the downloaded file
             const qtAudioEnd = qtAudioStart + (qtOffsets.endSec - qtOffsets.startSec);
 
-            // Convert recording-relative → in-file offsets
-            const allQtStarts = captionTimestamps
-              .map((t) => t - downloadStartSec)
-              .filter((t) => t > 0 && t < qtAudioEnd + 60);
+            // Convert caption events to file-relative seconds
+            const captionEvents = captionTimestamps
+              .map((e) => ({ ...e, sec: e.sec - downloadStartSec }))
+              .filter((e) => e.sec > 0 && e.sec < qtAudioEnd + 60);
 
-            // Caption timestamps include ALL questions (real + Dorothy Dixers) in order.
-            // Not every question gets detected (unusual Speaker phrasing), so we use
-            // nearest-timestamp matching weighted by expected position in QT.
+            const sortedStarts = captionEvents.map((e) => e.sec).sort((a, b) => a - b);
+
+            // Build electorate → file-relative timestamp lookup from caption events
+            const electorateToTimestamp = new Map<string, number>();
+            for (const e of captionEvents) {
+              if (e.electorate) {
+                const key = e.electorate.toLowerCase();
+                if (!electorateToTimestamp.has(key)) electorateToTimestamp.set(key, e.sec);
+              }
+            }
+
+            // Build member electorate lookup: member_id → electorate (normalised)
+            const memberElectorateMap = new Map<string, string>();
+            for (const m of members ?? []) {
+              if (m.electorate) memberElectorateMap.set(m.id, m.electorate.toLowerCase());
+            }
+
             const allQuestionsInOrder = classifiedQuestions.filter((q) => q.questionNumber);
             const nTotal = allQuestionsInOrder.length;
             const qtDuration = qtAudioEnd - qtAudioStart;
 
-            // Build a complete timestamp array: detected where available, interpolated otherwise.
-            // Strategy: for each real question at position idx/nTotal through QT,
-            // find the nearest unused caption timestamp within an 8-minute window.
-            // If none found, fall back to the proportional expected time.
-            const sortedStarts = [...allQtStarts].sort((a, b) => a - b);
             const usedIdx = new Set<number>();
-
             const assignedStarts = new Map<number, number>(); // questionNumber → start time
-            // Process real questions in QT order
+
             const realInOrder = realQuestionsForAudio
               .map((q) => ({ q, idx: allQuestionsInOrder.findIndex((aq) => aq.questionNumber === q.questionNumber) }))
               .filter(({ idx }) => idx >= 0)
               .sort((a, b) => a.idx - b.idx);
 
             for (const { q, idx } of realInOrder) {
+              // 1. Try exact electorate match from captions
+              const askerElectorate = q.askerMemberId ? memberElectorateMap.get(q.askerMemberId) : null;
+              const electorateMatch = askerElectorate ? electorateToTimestamp.get(askerElectorate) : null;
+              if (electorateMatch !== undefined && electorateMatch !== null) {
+                assignedStarts.set(q.questionNumber!, electorateMatch);
+                console.log(`  Q${q.questionNumber} matched by electorate (${askerElectorate}): ${Math.floor(electorateMatch/60)}m${Math.round(electorateMatch%60)}s`);
+                continue;
+              }
+
+              // 2. Nearest unused caption timestamp within 8 minutes of expected position
               const expectedT = qtAudioStart + (idx / Math.max(nTotal - 1, 1)) * qtDuration;
               let best = -1;
-              let bestDist = 8 * 60; // 8-minute tolerance
+              let bestDist = 8 * 60;
               for (let k = 0; k < sortedStarts.length; k++) {
                 if (usedIdx.has(k)) continue;
                 const dist = Math.abs(sortedStarts[k] - expectedT);
@@ -419,10 +437,15 @@ async function run() {
               }
             }
 
+            const electorateMatchCount = realInOrder.filter(({ q }) =>
+              q.askerMemberId && memberElectorateMap.has(q.askerMemberId) &&
+              electorateToTimestamp.has(memberElectorateMap.get(q.askerMemberId)!)
+            ).length;
+
             const questionStarts = realQuestionsForAudio.map(
               (q) => assignedStarts.get(q.questionNumber!) ?? qtAudioStart
             );
-            console.log(`  Using ${usedIdx.size} caption timestamps + ${realQuestionsForAudio.length - usedIdx.size} interpolated for ${realQuestionsForAudio.length} real questions`);
+            console.log(`  Timestamp matching: ${electorateMatchCount} electorate, ${usedIdx.size} nearest-neighbour, ${realQuestionsForAudio.length - electorateMatchCount - usedIdx.size} interpolated`);
 
             // Ends: start of the next event (real or Dorothy Dixer) from caption timestamps, or qtAudioEnd
             const questionEnds = realQuestionsForAudio.map((q, i) => {
