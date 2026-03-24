@@ -115,6 +115,10 @@ export function parseDebates(data: OADebatesResponse): {
 // ── Parsers ───────────────────────────────────────────────────────────────────
 
 function parseQuestionSubs(subs: OAEntry[]): ParsedQuestion[] {
+  if (subs.length > 0) {
+    console.log(`  First question sub keys: ${Object.keys(subs[0]).join(", ")}`);
+    console.log(`  First question sub raw: ${JSON.stringify(subs[0]).slice(0, 300)}`);
+  }
   return subs
     .filter((s) => s.body || s.excerpt)
     .map((s, i) => ({
