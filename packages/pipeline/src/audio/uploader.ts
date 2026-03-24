@@ -18,6 +18,26 @@ const r2 = new S3Client({
 const BUCKET = process.env.R2_BUCKET!;
 const CDN_BASE = process.env.R2_CDN_URL ?? `https://audio.onnotice.au`;
 
+export async function uploadClip(
+  localPath: string,
+  parliamentId: string,
+  date: string,
+  questionNumber: number
+): Promise<string> {
+  const key = `audio/${parliamentId}/${date}/q${String(questionNumber).padStart(2, "0")}.mp3`;
+  const body = fs.readFileSync(localPath);
+
+  await r2.send(new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    Body: body,
+    ContentType: "audio/mpeg",
+    CacheControl: "public, max-age=31536000, immutable",
+  }));
+
+  return `${CDN_BASE}/${key}`;
+}
+
 export async function uploadEpisode(
   localPath: string,
   parliamentId: string,

@@ -24,7 +24,7 @@ import { findParlViewVideo, questionTimeOffsets, timecodeToSeconds } from "./scr
 import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { generateIntroClip, introText } from "./audio/tts";
-import { uploadEpisode } from "./audio/uploader";
+import { uploadEpisode, uploadClip } from "./audio/uploader";
 import * as fs from "node:fs";
 
 async function run() {
@@ -410,7 +410,7 @@ async function run() {
 
             // 8e: Build episode
             const episodePath = `${workDir}/episode.mp3`;
-            const { durationSec } = await buildEpisode(
+            const { durationSec, clipPaths } = await buildEpisode(
               rawAudioPath,
               downloadStartSec,
               segments,
@@ -419,7 +419,7 @@ async function run() {
             );
             console.log(`  Episode built: ${Math.round(durationSec / 60)}min`);
 
-            // 8f: Upload to R2
+            // 8f: Upload episode to R2
             const audioUrl = await uploadEpisode(episodePath, parliamentId, date);
             console.log(`  Uploaded: ${audioUrl}`);
 
@@ -428,6 +428,22 @@ async function run() {
               audio_url: audioUrl,
               audio_duration_sec: durationSec,
             }).eq("id", sittingDayId);
+
+            // 8g: Upload per-question clips and store URLs
+            for (const seg of segments) {
+              const clipPath = clipPaths.get(seg.questionNumber);
+              if (!clipPath || !fs.existsSync(clipPath)) continue;
+              try {
+                const clipUrl = await uploadClip(clipPath, parliamentId, date, seg.questionNumber);
+                // Find matching question row by question_number + sitting_day_id
+                await db.from("questions").update({ audio_clip_url: clipUrl })
+                  .eq("sitting_day_id", sittingDayId)
+                  .eq("question_number", seg.questionNumber);
+                console.log(`  Clip uploaded: Q${seg.questionNumber} → ${clipUrl}`);
+              } catch (clipErr) {
+                console.warn(`  Clip upload failed for Q${seg.questionNumber}: ${clipErr}`);
+              }
+            }
 
             // Cleanup temp files
             fs.rmSync(workDir, { recursive: true, force: true });

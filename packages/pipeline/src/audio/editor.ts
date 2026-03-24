@@ -92,8 +92,9 @@ export async function buildEpisode(
   segments: QuestionSegment[],
   outputPath: string,
   workDir: string
-): Promise<{ path: string; durationSec: number }> {
+): Promise<{ path: string; durationSec: number; clipPaths: Map<number, string> }> {
   const parts: string[] = [];
+  const clipPaths = new Map<number, string>();
 
   for (const seg of segments) {
     // Adjust for the download window offset
@@ -112,6 +113,7 @@ export async function buildEpisode(
 
     const segPath = path.join(workDir, `q${seg.questionNumber}.mp3`);
     await cutSegment(rawAudioPath, relStart, relEnd, segPath);
+    clipPaths.set(seg.questionNumber, segPath);
     parts.push(segPath);
   }
 
@@ -128,5 +130,5 @@ export async function buildEpisode(
   ]);
   const durationSec = Math.round(parseFloat(stdout.trim()));
 
-  return { path: outputPath, durationSec };
+  return { path: outputPath, durationSec, clipPaths };
 }
