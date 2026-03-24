@@ -32,7 +32,7 @@ async function run() {
   const { values } = parseArgs({
     options: {
       parliament: { type: "string", default: "fed_hor" },
-      date: { type: "string", default: format(new Date(), "yyyy-MM-dd") },
+      date: { type: "string", default: format(new Date(Date.now() - 864e5), "yyyy-MM-dd") },
       "skip-audio": { type: "boolean", default: false },
       "members-only": { type: "boolean", default: false },
     },
