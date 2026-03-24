@@ -47,7 +47,7 @@ export async function downloadQuestionTimeAudio(
     "--quiet",
   ];
 
-  await execFileAsync("yt-dlp", args, { timeout: 300_000 });
+  await execFileAsync("yt-dlp", args, { timeout: 900_000 }); // 15 min
 
   // yt-dlp may output .mp3 directly or need conversion
   const candidates = [
