@@ -387,6 +387,10 @@ async function run() {
                 ).catch((e) => { console.warn(`  AI timestamp extraction failed: ${e.message}`); return []; })
               : [];
 
+            if (qtTranscript) {
+              const first20 = qtTranscript.split("\n").slice(0, 20).join("\n");
+              console.log(`  Transcript starts:\n${first20}`);
+            }
             console.log(`  AI identified ${aiTimestamps.length}/${realQuestionsForAudio.length} question timestamps`);
             for (const t of aiTimestamps) {
               console.log(`    Q${t.questionNumber}: T+${t.secFromQtStart}s`);
