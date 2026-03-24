@@ -361,6 +361,8 @@ async function run() {
 
             // Convert hansardTime (HH:MM:SS wall clock) to file offset using mediaSom
             const somSec = timecodeToSeconds(parlviewVideo.mediaSom);
+            console.log(`  mediaSom: ${parlviewVideo.mediaSom} → somSec=${Math.round(somSec)}s`);
+            console.log(`  downloadStartSec: ${Math.round(downloadStartSec)}s`);
             const htimeToOffset = (htime: string | null): number | null => {
               if (!htime) return null;
               const parts = htime.split(":").map(Number);
@@ -389,6 +391,9 @@ async function run() {
               const endSec = htimeEnd !== null && htimeEnd > startSec
                 ? htimeEnd
                 : startSec + segmentDuration;
+
+              const fmt = (s: number) => `${Math.floor(s/60)}m${Math.round(s%60)}s`;
+              console.log(`  Q${q.questionNumber}: hansardTime=${q.hansardTime ?? "null"} htimeStart=${htimeStart !== null ? Math.round(htimeStart) : "null"} → startSec=${fmt(startSec)} endSec=${fmt(endSec)} (in file: ${fmt(startSec - downloadStartSec)}→${fmt(endSec - downloadStartSec)})`);
 
               // Generate TTS intro clip
               const introPath = `${workDir}/intro-q${q.questionNumber}.mp3`;
