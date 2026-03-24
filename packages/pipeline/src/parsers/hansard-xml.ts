@@ -76,12 +76,13 @@ export function parseDebates(data: OADebatesResponse): {
 
     if (title) console.log(`  Section: ${title.slice(0, 80)}`);
 
-    // Question time
+    // Question time — renumber across sections to avoid duplicate question numbers
     if (title.includes("QUESTIONS WITHOUT NOTICE") || title.includes("QUESTION TIME")) {
       const subs = section.subs ?? [];
       console.log(`  → Found question time with ${subs.length} subs`);
       const qs = parseQuestionSubs(subs);
-      questions.push(...qs);
+      const offset = questions.length;
+      for (const q of qs) questions.push({ ...q, questionNumber: offset + q.questionNumber });
     }
 
     // Bills

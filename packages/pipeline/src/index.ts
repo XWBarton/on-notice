@@ -379,36 +379,57 @@ async function run() {
               .filter((t) => t > 0 && t < qtAudioEnd + 60);
 
             // Caption timestamps include ALL questions (real + Dorothy Dixers) in order.
-            // We're only cutting segments for real questions, but we use ALL timestamps
-            // to find the boundaries. Map: allQuestions[i] → allQtStarts[i].
+            // Not every question gets detected (unusual Speaker phrasing), so we use
+            // nearest-timestamp matching weighted by expected position in QT.
             const allQuestionsInOrder = classifiedQuestions.filter((q) => q.questionNumber);
-            let questionStarts: number[];
+            const nTotal = allQuestionsInOrder.length;
+            const qtDuration = qtAudioEnd - qtAudioStart;
 
-            if (allQtStarts.length >= allQuestionsInOrder.length) {
-              // We have enough timestamps — map by total question order position
-              questionStarts = realQuestionsForAudio.map((q) => {
-                const idx = allQuestionsInOrder.findIndex((aq) => aq.questionNumber === q.questionNumber);
-                return allQtStarts[idx] ?? qtAudioStart;
-              });
-              console.log(`  Using caption timestamps for ${questionStarts.length} real questions`);
-            } else {
-              // Not enough — evenly-spaced fallback
-              console.warn(`  Caption timestamps (${allQtStarts.length}) < questions (${allQuestionsInOrder.length}), using evenly-spaced fallback`);
-              const segDur = (qtAudioEnd - qtAudioStart) / Math.max(allQuestionsInOrder.length, 1);
-              questionStarts = realQuestionsForAudio.map((_, i) => qtAudioStart + i * segDur);
+            // Build a complete timestamp array: detected where available, interpolated otherwise.
+            // Strategy: for each real question at position idx/nTotal through QT,
+            // find the nearest unused caption timestamp within an 8-minute window.
+            // If none found, fall back to the proportional expected time.
+            const sortedStarts = [...allQtStarts].sort((a, b) => a - b);
+            const usedIdx = new Set<number>();
+
+            const assignedStarts = new Map<number, number>(); // questionNumber → start time
+            // Process real questions in QT order
+            const realInOrder = realQuestionsForAudio
+              .map((q) => ({ q, idx: allQuestionsInOrder.findIndex((aq) => aq.questionNumber === q.questionNumber) }))
+              .filter(({ idx }) => idx >= 0)
+              .sort((a, b) => a.idx - b.idx);
+
+            for (const { q, idx } of realInOrder) {
+              const expectedT = qtAudioStart + (idx / Math.max(nTotal - 1, 1)) * qtDuration;
+              let best = -1;
+              let bestDist = 8 * 60; // 8-minute tolerance
+              for (let k = 0; k < sortedStarts.length; k++) {
+                if (usedIdx.has(k)) continue;
+                const dist = Math.abs(sortedStarts[k] - expectedT);
+                if (dist < bestDist) { bestDist = dist; best = k; }
+              }
+              if (best >= 0) {
+                usedIdx.add(best);
+                assignedStarts.set(q.questionNumber!, sortedStarts[best]);
+              } else {
+                assignedStarts.set(q.questionNumber!, expectedT);
+              }
             }
 
-            // Add sentinel end for the last question
-            const questionEnds = [
-              ...questionStarts.slice(1).map((s, i) => {
-                // end = start of next real question, but if there's a caption timestamp for
-                // the question AFTER this one (which might be a Dorothy Dixer), use that
-                const thisQ = realQuestionsForAudio[i];
-                const nextAllIdx = allQuestionsInOrder.findIndex((aq) => aq.questionNumber === thisQ?.questionNumber) + 1;
-                return allQtStarts[nextAllIdx] ?? s;
-              }),
-              qtAudioEnd,
-            ];
+            const questionStarts = realQuestionsForAudio.map(
+              (q) => assignedStarts.get(q.questionNumber!) ?? qtAudioStart
+            );
+            console.log(`  Using ${usedIdx.size} caption timestamps + ${realQuestionsForAudio.length - usedIdx.size} interpolated for ${realQuestionsForAudio.length} real questions`);
+
+            // Ends: start of the next event (real or Dorothy Dixer) from caption timestamps, or qtAudioEnd
+            const questionEnds = realQuestionsForAudio.map((q, i) => {
+              const start = questionStarts[i];
+              // Next caption timestamp after this question's start
+              const nextTs = sortedStarts.find((t) => t > start + 30); // must be >30s later
+              const nextRealStart = questionStarts[i + 1];
+              if (nextTs && nextRealStart) return Math.min(nextTs, nextRealStart);
+              return nextTs ?? nextRealStart ?? qtAudioEnd;
+            });
 
             const segments: QuestionSegment[] = [];
 
