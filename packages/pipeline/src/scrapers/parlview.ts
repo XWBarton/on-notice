@@ -13,6 +13,8 @@ export interface ParlViewVideo {
   title: string;
   chamber: string;
   recordingFrom: string;
+  /** SMPTE timecode of the first frame of the recording — used to calculate file offsets */
+  mediaSom: string;
   segments: ParlViewSegment[];
 }
 
@@ -55,10 +57,13 @@ export function questionTimeOffsets(
   );
   if (!seg) return null;
 
-  // Segments are absolute timecodes from start of recording
-  const startSec = timecodeToSeconds(seg.segmentIn);
-  const endSec = timecodeToSeconds(seg.segmentOut);
-  return { startSec, endSec };
+  // Segment timecodes are wall-clock SMPTE values (e.g. 14:00:22:24 = 2pm).
+  // mediaSom is the wall-clock timecode at the start of the recording (e.g. 09:59:48:17).
+  // File offset = segment timecode - mediaSom.
+  const somSec = timecodeToSeconds(video.mediaSom);
+  const startSec = timecodeToSeconds(seg.segmentIn) - somSec;
+  const endSec = timecodeToSeconds(seg.segmentOut) - somSec;
+  return { startSec: Math.max(0, startSec), endSec };
 }
 
 export async function findParlViewVideo(
@@ -100,6 +105,7 @@ export async function findParlViewVideo(
                 title: v.parlViewTitle ?? v.title,
                 chamber: v.eventSubGroup ?? "",
                 recordingFrom: v.recordingFrom ?? "",
+                mediaSom: v.mediaSom ?? "",
                 segments: Array.isArray(v.segments) ? v.segments : [],
               });
             }
@@ -115,6 +121,7 @@ export async function findParlViewVideo(
               title: v.parlViewTitle ?? v.title,
               chamber: v.eventSubGroup ?? "",
               recordingFrom: v.recordingFrom ?? "",
+              mediaSom: v.mediaSom ?? "",
               segments: Array.isArray(v.segments) ? v.segments : [],
             });
           }
@@ -159,6 +166,7 @@ export async function findParlViewVideo(
           title: v.parlViewTitle ?? v.title,
           chamber: v.eventSubGroup ?? "",
           recordingFrom: v.recordingFrom ?? "",
+          mediaSom: v.mediaSom ?? "",
           segments: Array.isArray(json.videoDetails.segments) ? json.videoDetails.segments : [],
         };
       }
