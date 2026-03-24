@@ -25,7 +25,7 @@ import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloade
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { generateIntroClip, introText } from "./audio/tts";
 import { uploadEpisode, uploadClip } from "./audio/uploader";
-import { detectSilence, pickCutPoints } from "./audio/silence";
+import { extractQuestionTimestamps } from "./audio/captions";
 import * as fs from "node:fs";
 
 async function run() {
@@ -361,31 +361,61 @@ async function run() {
 
             const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
 
-            // Use ffmpeg silence detection to find natural breaks between questions
-            console.log(`  Running silence detection on QT audio...`);
-            const qtAudioStart = 30; // we downloaded with 30s buffer before QT
-            const qtAudioEnd = qtAudioStart + (qtOffsets.endSec - qtOffsets.startSec);
-            const silenceGaps = await detectSilence(rawAudioPath);
-            console.log(`  Found ${silenceGaps.length} silence gaps`);
-
-            const cutPoints = pickCutPoints(
-              silenceGaps,
-              realQuestionsForAudio.length,
-              qtAudioStart,
-              qtAudioEnd
+            // Use ParlView captions to get exact question start timestamps
+            const captionTimestamps = await extractQuestionTimestamps(
+              parlviewVideo,
+              qtOffsets.startSec,
+              qtOffsets.endSec
             );
-            console.log(`  Cut points (${cutPoints.length}): ${cutPoints.map((s) => `${Math.floor(s/60)}m${Math.round(s%60)}s`).join(", ")}`);
 
-            // Build segments from cut points
-            // cutPoints[i] = start of question i+1; question 0 starts at qtAudioStart
-            const questionStarts = [qtAudioStart, ...cutPoints];
+            // captionTimestamps are recording-relative (from mediaSom).
+            // Convert to file-relative (from start of downloaded audio).
+            const qtAudioStart = 30; // 30s buffer before QT start in the downloaded file
+            const qtAudioEnd = qtAudioStart + (qtOffsets.endSec - qtOffsets.startSec);
+
+            // Convert recording-relative → in-file offsets
+            const allQtStarts = captionTimestamps
+              .map((t) => t - downloadStartSec)
+              .filter((t) => t > 0 && t < qtAudioEnd + 60);
+
+            // Caption timestamps include ALL questions (real + Dorothy Dixers) in order.
+            // We're only cutting segments for real questions, but we use ALL timestamps
+            // to find the boundaries. Map: allQuestions[i] → allQtStarts[i].
+            const allQuestionsInOrder = classifiedQuestions.filter((q) => q.questionNumber);
+            let questionStarts: number[];
+
+            if (allQtStarts.length >= allQuestionsInOrder.length) {
+              // We have enough timestamps — map by total question order position
+              questionStarts = realQuestionsForAudio.map((q) => {
+                const idx = allQuestionsInOrder.findIndex((aq) => aq.questionNumber === q.questionNumber);
+                return allQtStarts[idx] ?? qtAudioStart;
+              });
+              console.log(`  Using caption timestamps for ${questionStarts.length} real questions`);
+            } else {
+              // Not enough — evenly-spaced fallback
+              console.warn(`  Caption timestamps (${allQtStarts.length}) < questions (${allQuestionsInOrder.length}), using evenly-spaced fallback`);
+              const segDur = (qtAudioEnd - qtAudioStart) / Math.max(allQuestionsInOrder.length, 1);
+              questionStarts = realQuestionsForAudio.map((_, i) => qtAudioStart + i * segDur);
+            }
+
+            // Add sentinel end for the last question
+            const questionEnds = [
+              ...questionStarts.slice(1).map((s, i) => {
+                // end = start of next real question, but if there's a caption timestamp for
+                // the question AFTER this one (which might be a Dorothy Dixer), use that
+                const thisQ = realQuestionsForAudio[i];
+                const nextAllIdx = allQuestionsInOrder.findIndex((aq) => aq.questionNumber === thisQ?.questionNumber) + 1;
+                return allQtStarts[nextAllIdx] ?? s;
+              }),
+              qtAudioEnd,
+            ];
 
             const segments: QuestionSegment[] = [];
 
             for (let i = 0; i < realQuestionsForAudio.length; i++) {
               const q = realQuestionsForAudio[i];
               const startSec = questionStarts[i] ?? qtAudioStart;
-              const endSec = questionStarts[i + 1] ?? qtAudioEnd;
+              const endSec = questionEnds[i] ?? qtAudioEnd;
 
               const fmt = (s: number) => `${Math.floor(s/60)}m${Math.round(s%60)}s`;
               console.log(`  Q${q.questionNumber}: ${fmt(startSec)} → ${fmt(endSec)}`);

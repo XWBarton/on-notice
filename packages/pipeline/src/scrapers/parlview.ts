@@ -15,6 +15,10 @@ export interface ParlViewVideo {
   recordingFrom: string;
   /** SMPTE timecode of the first frame of the recording — used to calculate file offsets */
   mediaSom: string;
+  /** Frame number of the HLS file's first frame (divide by 25 to get seconds-from-midnight AEDT) */
+  fileSom: string;
+  /** HLS m3u8 URL for this video */
+  hlsUrl: string;
   segments: ParlViewSegment[];
 }
 
@@ -106,6 +110,8 @@ export async function findParlViewVideo(
                 chamber: v.eventSubGroup ?? "",
                 recordingFrom: v.recordingFrom ?? "",
                 mediaSom: v.mediaSom ?? "",
+                fileSom: v.files?.file?.fileSom ?? v.fileSom ?? "",
+                hlsUrl: v.files?.file?.url ?? "",
                 segments: Array.isArray(v.segments) ? v.segments : [],
               });
             }
@@ -122,6 +128,8 @@ export async function findParlViewVideo(
               chamber: v.eventSubGroup ?? "",
               recordingFrom: v.recordingFrom ?? "",
               mediaSom: v.mediaSom ?? "",
+              fileSom: v.files?.file?.fileSom ?? v.fileSom ?? "",
+              hlsUrl: v.files?.file?.url ?? "",
               segments: Array.isArray(v.segments) ? v.segments : [],
             });
           }
@@ -167,6 +175,8 @@ export async function findParlViewVideo(
           chamber: v.eventSubGroup ?? "",
           recordingFrom: v.recordingFrom ?? "",
           mediaSom: v.mediaSom ?? "",
+          fileSom: (v.files as unknown as Record<string, Record<string, string>> | undefined)?.file?.fileSom ?? "",
+          hlsUrl: (v.files as unknown as Record<string, Record<string, string>> | undefined)?.file?.url ?? "",
           segments: Array.isArray(json.videoDetails.segments) ? json.videoDetails.segments : [],
         };
       }
