@@ -73,7 +73,7 @@ jobs:
           if [ -n "$DATE_ARG" ]; then
             ARGS="$ARGS --date $DATE_ARG"
           fi
-          if [ "${{ github.event.inputs.skip_audio || 'true' }}" = "true" ]; then
+          if [ "${{ github.event.inputs.skip_audio || 'false' }}" = "true" ]; then
             ARGS="$ARGS --skip-audio"
           fi
           npx ts-node packages/pipeline/src/index.ts $ARGS
