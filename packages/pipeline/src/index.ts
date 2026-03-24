@@ -25,6 +25,7 @@ import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloade
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { generateIntroClip, introText } from "./audio/tts";
 import { uploadEpisode, uploadClip } from "./audio/uploader";
+import { detectSilence, pickCutPoints } from "./audio/silence";
 import * as fs from "node:fs";
 
 async function run() {
@@ -360,41 +361,34 @@ async function run() {
 
             const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
 
-            // Convert hansardTime (HH:MM:SS wall clock) to file offset using mediaSom
-            const somSec = timecodeToSeconds(parlviewVideo.mediaSom);
-            console.log(`  mediaSom: ${parlviewVideo.mediaSom} → somSec=${Math.round(somSec)}s`);
-            console.log(`  downloadStartSec: ${Math.round(downloadStartSec)}s`);
-            const htimeToOffset = (htime: string | null): number | null => {
-              if (!htime) return null;
-              const parts = htime.split(":").map(Number);
-              if (parts.length < 2) return null;
-              const [h, m, s = 0] = parts;
-              return h * 3600 + m * 60 + s - somSec;
-            };
+            // Use ffmpeg silence detection to find natural breaks between questions
+            console.log(`  Running silence detection on QT audio...`);
+            const qtAudioStart = 30; // we downloaded with 30s buffer before QT
+            const qtAudioEnd = qtAudioStart + (qtOffsets.endSec - qtOffsets.startSec);
+            const silenceGaps = await detectSilence(rawAudioPath);
+            console.log(`  Found ${silenceGaps.length} silence gaps`);
 
-            // Build start times: use hansardTime if available, else evenly space
-            const qtDuration = qtOffsets.endSec - qtOffsets.startSec;
-            const segmentDuration = qtDuration / Math.max(realQuestionsForAudio.length, 1);
+            const cutPoints = pickCutPoints(
+              silenceGaps,
+              realQuestionsForAudio.length,
+              qtAudioStart,
+              qtAudioEnd
+            );
+            console.log(`  Cut points (${cutPoints.length}): ${cutPoints.map((s) => `${Math.floor(s/60)}m${Math.round(s%60)}s`).join(", ")}`);
+
+            // Build segments from cut points
+            // cutPoints[i] = start of question i+1; question 0 starts at qtAudioStart
+            const questionStarts = [qtAudioStart, ...cutPoints];
 
             const segments: QuestionSegment[] = [];
 
             for (let i = 0; i < realQuestionsForAudio.length; i++) {
               const q = realQuestionsForAudio[i];
-              const next = realQuestionsForAudio[i + 1];
-
-              // Use hansardTime for precise start; next question's time as end
-              const htimeStart = htimeToOffset(q.hansardTime ?? null);
-              const htimeEnd = next ? htimeToOffset(next.hansardTime ?? null) : null;
-
-              const startSec = htimeStart !== null && htimeStart > 0
-                ? htimeStart
-                : qtOffsets.startSec + i * segmentDuration;
-              const endSec = htimeEnd !== null && htimeEnd > startSec
-                ? htimeEnd
-                : startSec + segmentDuration;
+              const startSec = questionStarts[i] ?? qtAudioStart;
+              const endSec = questionStarts[i + 1] ?? qtAudioEnd;
 
               const fmt = (s: number) => `${Math.floor(s/60)}m${Math.round(s%60)}s`;
-              console.log(`  Q${q.questionNumber}: hansardTime=${q.hansardTime ?? "null"} htimeStart=${htimeStart !== null ? Math.round(htimeStart) : "null"} → startSec=${fmt(startSec)} endSec=${fmt(endSec)} (in file: ${fmt(startSec - downloadStartSec)}→${fmt(endSec - downloadStartSec)})`);
+              console.log(`  Q${q.questionNumber}: ${fmt(startSec)} → ${fmt(endSec)}`);
 
               // Generate TTS intro clip
               const introPath = `${workDir}/intro-q${q.questionNumber}.mp3`;
@@ -418,7 +412,7 @@ async function run() {
             const episodePath = `${workDir}/episode.mp3`;
             const { durationSec, clipPaths } = await buildEpisode(
               rawAudioPath,
-              downloadStartSec,
+              0, // segments are already file-relative (silence detection output)
               segments,
               episodePath,
               workDir
