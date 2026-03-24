@@ -15,7 +15,7 @@ import type { ParlViewVideo } from "../scrapers/parlview";
 import { timecodeToSeconds } from "../scrapers/parlview";
 
 const QUESTIONER_RE = /(?:give\s+(?:a\s+|the\s+)?call|recall|the\s+call|give\s+me\s+a\s+call|\bcall)\s+to\s+the\s+(?:honourable\s+(?:the\s+)?)?(?:member\s+for\b|leader\s+of\s+the\s+opposition|deputy\s+leader|manager\s+of\s+opposition)/i;
-const ANSWERER_RE = /\bcall\s+to\s+the\s+(?:prime\s+minister|treasurer|minister\s+for|deputy\s+prime\s+minister|assistant\s+treasurer)/i;
+const ANSWERER_RE = /\bcall\s+to\s+the\s+(?:prime\s+minister|treasurer|minister(?:\s+for)?|deputy\s+prime\s+minister|assistant\s+treasurer)/i;
 
 interface VttEntry {
   sec: number;
@@ -84,8 +84,8 @@ function findQuestionStarts(
     const { sec } = entries[i];
     if (sec < qtStartLocal - 30) continue;
 
-    // Build a 6-second forward window
-    while (j < entries.length && entries[j].sec < sec + 6) j++;
+    // Build a 12-second forward window (rolling captions need ~8–12s for full phrase)
+    while (j < entries.length && entries[j].sec < sec + 12) j++;
     const windowText = entries
       .slice(i, j)
       .map((e) => e.text)
