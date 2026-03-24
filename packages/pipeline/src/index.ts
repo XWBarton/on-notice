@@ -445,8 +445,8 @@ async function run() {
               }
             }
 
-            // Cleanup temp files
-            fs.rmSync(workDir, { recursive: true, force: true });
+            // Keep temp dir so the raw audio can be reused on the next run
+            // (manually delete /tmp/on-notice-audio-* to force a fresh download)
           }
         }
       } catch (audioErr) {

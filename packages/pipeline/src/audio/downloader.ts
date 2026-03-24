@@ -33,6 +33,13 @@ export async function downloadQuestionTimeAudio(
   const bufferedEnd = endSec + 30;
   const section = `*${fmt(bufferedStart)}-${fmt(bufferedEnd)}`;
 
+  // Reuse existing download if present (speeds up iterative testing)
+  const existing = [outputPath, outputPath.replace(".mp3", ".m4a"), outputPath.replace(".mp3", ".webm")].find((p) => fs.existsSync(p));
+  if (existing) {
+    console.log(`  Reusing cached audio: ${existing}`);
+    return existing;
+  }
+
   console.log(`  Downloading Question Time audio: ${fmt(bufferedStart)} → ${fmt(bufferedEnd)}`);
 
   const args = [
