@@ -41,7 +41,7 @@ export async function fetchDebates(
   let res: Response | null = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+      res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
       if (res.ok || res.status === 404) break;
     } catch (e) {
       if (attempt === 3) throw e;

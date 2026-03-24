@@ -28,7 +28,7 @@ export async function syncFederalMembers(parliamentId: "fed_hor" | "fed_sen") {
   let res: Response | null = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+      res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
       if (res.ok) break;
     } catch (e) {
       if (attempt === 3) throw e;
