@@ -76,10 +76,11 @@ export function parseDebates(data: OADebatesResponse): {
 
     if (title) console.log(`  Section: ${title.slice(0, 80)}`);
 
-    // Question time — renumber across sections to avoid duplicate question numbers
+    // Question time — skip tiny sections (< 5 subs), they're procedural headers not real QT
     if (title.includes("QUESTIONS WITHOUT NOTICE") || title.includes("QUESTION TIME")) {
       const subs = section.subs ?? [];
       console.log(`  → Found question time with ${subs.length} subs`);
+      if (subs.length < 5) { console.log(`    Skipping (too few subs — likely procedural header)`); continue; }
       const qs = parseQuestionSubs(subs);
       const offset = questions.length;
       for (const q of qs) questions.push({ ...q, questionNumber: offset + q.questionNumber });

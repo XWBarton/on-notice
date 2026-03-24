@@ -233,6 +233,9 @@ async function run() {
       enrichedBills.push({ title: bill.shortTitle, party: null, summary });
     }
 
+    // Clear stale questions before re-inserting (numbering may have changed between runs)
+    await db.from("questions").delete().eq("sitting_day_id", sittingDayId);
+
     // Sequential to avoid Claude rate limits; skip summary if no answer text available
     const enrichedQuestions: Array<{ asker: string; minister: string; subject: string | null; summary: string | null }> = [];
     for (const q of classifiedQuestions) {
