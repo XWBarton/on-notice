@@ -38,10 +38,10 @@ Return ONLY a JSON array with no explanation. Example: [{"questionNumber":1,"sec
     `Questions to find (from Hansard, in order):
 ${questionList}
 
-The electorate is shown in brackets — e.g. "Q1: Rick Wilson (LIB, O'Connor)" means look for
-"call to the member for O'Connor" in the transcript.
-Only include questions you can confidently identify. Omit if not found.
-Return JSON array: [{"questionNumber": N, "secFromQtStart": T}, ...]
+Format is: Q<number>: <name> (<party>, <electorate>)
+Search the transcript for "call to the member for <electorate>" to find when the Speaker calls each questioner.
+Only include questions you can confidently identify. Omit any you cannot find.
+Output JSON array only, no explanation: [{"questionNumber": N, "secFromQtStart": T}, ...]
 
 Transcript:
 ${condensedTranscript}`,

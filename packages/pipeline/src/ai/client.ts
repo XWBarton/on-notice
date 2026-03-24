@@ -52,8 +52,11 @@ export async function callClaude<T>(
   maxTokens = 512
 ): Promise<T> {
   const text = await callClaudeText(model, system, user, maxTokens);
-  // Extract JSON from response (handles markdown code blocks, arrays or objects)
-  const jsonMatch = text.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+  // Try JSON array of objects first, then plain object, then any array
+  const jsonMatch =
+    text.match(/\[\s*\{[\s\S]*\}\s*\]/) ||
+    text.match(/\{[\s\S]*\}/) ||
+    text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) throw new Error(`No JSON in Claude response: ${text.slice(0, 200)}`);
   return JSON.parse(jsonMatch[0]) as T;
 }
