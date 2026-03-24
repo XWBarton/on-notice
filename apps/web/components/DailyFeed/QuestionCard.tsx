@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { PartyBadge } from "@/components/Member/PartyBadge";
 
 // Maps raw OA party strings (and normalized short names) → display badge
@@ -62,6 +62,7 @@ interface QuestionCardProps {
     answer_text?: string | null;
     ai_summary: string | null;
     transcript_json?: TranscriptEntry[] | null;
+    audio_clip_url?: string | null;
     asker_name?: string | null;
     asker_party?: string | null;
     minister_name?: string | null;
@@ -194,6 +195,46 @@ function StructuredTranscript({ entries }: { entries: TranscriptEntry[] }) {
   );
 }
 
+function AudioClipPlayer({ url }: { url: string }) {
+  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  function toggle() {
+    if (!audioRef.current) {
+      const a = new Audio(url);
+      audioRef.current = a;
+      a.onended = () => setPlaying(false);
+      a.play();
+      setPlaying(true);
+    } else if (playing) {
+      audioRef.current.pause();
+      setPlaying(false);
+    } else {
+      audioRef.current.play();
+      setPlaying(true);
+    }
+  }
+
+  return (
+    <button
+      onClick={toggle}
+      className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full px-3 py-1 transition-colors"
+    >
+      {playing ? (
+        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+          <rect x="2" y="1" width="3" height="10" rx="0.5" />
+          <rect x="7" y="1" width="3" height="10" rx="0.5" />
+        </svg>
+      ) : (
+        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+          <path d="M3 2l7 4-7 4V2z" />
+        </svg>
+      )}
+      {playing ? "Pause" : "Play Q&A"}
+    </button>
+  );
+}
+
 export function QuestionCard({ question }: QuestionCardProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -228,9 +269,16 @@ export function QuestionCard({ question }: QuestionCardProps) {
         )}
       </div>
 
-      {question.subject && (
-        <p className="font-medium text-gray-900 text-sm">{question.subject}</p>
-      )}
+      <div className="flex items-start justify-between gap-2">
+        {question.subject && (
+          <p className="font-medium text-gray-900 text-sm">{question.subject}</p>
+        )}
+        {question.audio_clip_url && (
+          <div className="shrink-0">
+            <AudioClipPlayer url={question.audio_clip_url} />
+          </div>
+        )}
+      </div>
 
       {question.ai_summary && (
         <div className="mt-1.5">

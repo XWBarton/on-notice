@@ -72,7 +72,7 @@ export default async function DatePage({
       supabase.from("divisions").select("*").eq("sitting_day_id", sittingDay.id).order("occurred_at").order("division_number"),
       supabase
         .from("questions")
-        .select("*, asker:members!questions_asker_id_fkey(name_display, party_id, parties(short_name, colour_hex)), minister:members!questions_minister_id_fkey(name_display, role)")
+        .select("*, audio_clip_url, asker:members!questions_asker_id_fkey(name_display, party_id, parties(short_name, colour_hex)), minister:members!questions_minister_id_fkey(name_display, role)")
         .eq("sitting_day_id", sittingDay.id)
         .order("question_number")
         .limit(80),
