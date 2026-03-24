@@ -116,8 +116,8 @@ function findQuestionStarts(
     const { sec } = entries[i];
     if (sec < qtStartLocal - 30) continue;
 
-    // Build a 12-second forward window (rolling captions need ~8–12s for full phrase)
-    while (j < entries.length && entries[j].sec < sec + 12) j++;
+    // Build a 25-second forward window (rolling captions can take 15–20s for full "call to member for X" phrase)
+    while (j < entries.length && entries[j].sec < sec + 25) j++;
     const windowText = entries
       .slice(i, j)
       .map((e) => e.text)
@@ -127,7 +127,10 @@ function findQuestionStarts(
       if (sec - lastSec > 60) {
         lastSec = sec;
         const recordingRelative = sec - vttOffset;
-        results.push({ sec: recordingRelative, ...extractQuestioner(windowText) });
+        const extracted = extractQuestioner(windowText);
+        // Log first 200 chars of window to debug what was matched
+        console.log(`  Caption window (${Math.floor(sec/60)}m${Math.round(sec%60)}s): ${windowText.slice(0, 200)}`);
+        results.push({ sec: recordingRelative, ...extracted });
       }
     }
   }
