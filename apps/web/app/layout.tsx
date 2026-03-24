@@ -9,6 +9,7 @@ export const metadata: Metadata = {
   openGraph: {
     siteName: "On Notice",
     type: "website",
+    images: [{ url: "/icon.svg" }],
   },
 };
 
