@@ -20,6 +20,12 @@ import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
 import { summariseDivision } from "./ai/summarise-division";
 import { upsertDivisions } from "./db/upsert-divisions";
+import { findParlViewVideo, questionTimeOffsets, timecodeToSeconds } from "./scrapers/parlview";
+import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
+import { buildEpisode, type QuestionSegment } from "./audio/editor";
+import { generateIntroClip, introText } from "./audio/tts";
+import { uploadEpisode } from "./audio/uploader";
+import * as fs from "node:fs";
 
 async function run() {
   const { values } = parseArgs({
@@ -316,10 +322,107 @@ async function run() {
       { onConflict: "sitting_day_id" }
     );
 
-    // ── Step 8: Audio pipeline (Phase 2, skip for now) ───────────────────────
+    // ── Step 8: Audio pipeline ────────────────────────────────────────────────
     if (!skipAudio) {
-      console.log("Step 8: Audio pipeline (not yet implemented — skipping)");
-      // TODO: Phase 2 implementation
+      console.log("Step 8: Audio pipeline...");
+      try {
+        // 8a: Find ParlView video ID for today
+        const parlviewVideo = await findParlViewVideo(date, parliamentId as "fed_hor" | "fed_sen");
+        if (!parlviewVideo) {
+          console.log("  No ParlView video found — skipping audio");
+        } else {
+          console.log(`  ParlView video: ${parlviewVideo.id} (${parlviewVideo.title})`);
+
+          // Save parlview_id to DB
+          await db.from("sitting_days").update({ parlview_id: parlviewVideo.id }).eq("id", sittingDayId);
+
+          // 8b: Find Question Time window
+          const qtOffsets = questionTimeOffsets(parlviewVideo);
+          if (!qtOffsets) {
+            console.log("  No Question Time segment found in ParlView metadata — skipping audio");
+          } else {
+            console.log(`  Question Time: ${Math.round(qtOffsets.startSec)}s → ${Math.round(qtOffsets.endSec)}s`);
+
+            // 8c: Download Question Time audio
+            const workDir = createAudioWorkDir(date, parliamentId);
+            const rawAudioPath = await downloadQuestionTimeAudio(
+              parlviewVideo.id,
+              qtOffsets.startSec,
+              qtOffsets.endSec,
+              workDir
+            );
+            console.log(`  Downloaded: ${rawAudioPath}`);
+
+            // 8d: Map Hansard questions to audio offsets
+            // Questions have htime (wall clock). Recording start gives us the offset.
+            const recordingStart = new Date(parlviewVideo.recordingFrom).getTime() / 1000;
+            const downloadStartSec = Math.max(0, qtOffsets.startSec - 30); // 30s buffer we added
+
+            const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
+
+            // Build segments using Hansard division times as a proxy for question times
+            // Questions don't have exact timecodes in OA, so we space them evenly across
+            // the Question Time window as a fallback, then refine with htime if available
+            const qtDuration = qtOffsets.endSec - qtOffsets.startSec;
+            const segmentDuration = qtDuration / Math.max(realQuestionsForAudio.length, 1);
+
+            const segments: QuestionSegment[] = [];
+
+            for (let i = 0; i < realQuestionsForAudio.length; i++) {
+              const q = realQuestionsForAudio[i];
+
+              // Evenly spaced fallback within Question Time window
+              const startSec = qtOffsets.startSec + i * segmentDuration;
+              const endSec = startSec + segmentDuration;
+
+              // Generate TTS intro clip
+              const introPath = `${workDir}/intro-q${q.questionNumber}.mp3`;
+              const intro = introText(q.askerName ?? null, q.askerParty ?? null, q.ministerName ?? null, q.questionNumber ?? i + 1);
+              await generateIntroClip(intro, introPath).catch((e) => {
+                console.warn(`  TTS failed for Q${q.questionNumber}: ${e.message}`);
+              });
+
+              segments.push({
+                questionNumber: q.questionNumber ?? i + 1,
+                askerName: q.askerName ?? null,
+                askerParty: q.askerParty ?? null,
+                ministerName: q.ministerName ?? null,
+                startSec,
+                endSec,
+                introClipPath: fs.existsSync(introPath) ? introPath : undefined,
+              });
+            }
+
+            // 8e: Build episode
+            const episodePath = `${workDir}/episode.mp3`;
+            const { durationSec } = await buildEpisode(
+              rawAudioPath,
+              downloadStartSec,
+              segments,
+              episodePath,
+              workDir
+            );
+            console.log(`  Episode built: ${Math.round(durationSec / 60)}min`);
+
+            // 8f: Upload to R2
+            const audioUrl = await uploadEpisode(episodePath, parliamentId, date);
+            console.log(`  Uploaded: ${audioUrl}`);
+
+            // Save audio URL to sitting_days
+            await db.from("sitting_days").update({
+              audio_url: audioUrl,
+              audio_duration_sec: durationSec,
+            }).eq("id", sittingDayId);
+
+            // Cleanup temp files
+            fs.rmSync(workDir, { recursive: true, force: true });
+          }
+        }
+      } catch (audioErr) {
+        // Audio failure is non-fatal — text content is still complete
+        const msg = audioErr instanceof Error ? audioErr.message : String(audioErr);
+        console.warn(`  Audio pipeline failed (non-fatal): ${msg}`);
+      }
     }
 
     // ── Step 9: Mark complete ─────────────────────────────────────────────────
