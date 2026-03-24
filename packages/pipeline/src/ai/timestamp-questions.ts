@@ -13,12 +13,15 @@ export interface QuestionTimestamp {
 
 export async function extractTimestampsWithAI(
   condensedTranscript: string,
-  questions: { questionNumber: number; askerName: string | null; askerParty: string | null }[]
+  questions: { questionNumber: number; askerName: string | null; askerParty: string | null; electorate: string | null }[]
 ): Promise<QuestionTimestamp[]> {
   if (questions.length === 0 || !condensedTranscript.trim()) return [];
 
   const questionList = questions
-    .map((q) => `Q${q.questionNumber}: ${q.askerName ?? "Unknown"} (${q.askerParty ?? "?"})`)
+    .map((q) => {
+      const electorate = q.electorate ? `, ${q.electorate}` : "";
+      return `Q${q.questionNumber}: ${q.askerName ?? "Unknown"} (${q.askerParty ?? "?"}${electorate})`;
+    })
     .join("\n");
 
   const result = await callClaude<QuestionTimestamp[]>(
@@ -35,9 +38,8 @@ Return ONLY a JSON array with no explanation. Example: [{"questionNumber":1,"sec
     `Questions to find (from Hansard, in order):
 ${questionList}
 
-For each question, find the timestamp when the Speaker calls that questioner.
-Use the electorate to match to the member — e.g. Q3 is "Jane Smith (LIB)" who holds the seat of "Goldstein",
-so look for "call to the member for Goldstein".
+The electorate is shown in brackets — e.g. "Q1: Rick Wilson (LIB, O'Connor)" means look for
+"call to the member for O'Connor" in the transcript.
 Only include questions you can confidently identify. Omit if not found.
 Return JSON array: [{"questionNumber": N, "secFromQtStart": T}, ...]
 

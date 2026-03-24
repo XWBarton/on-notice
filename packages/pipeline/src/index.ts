@@ -367,6 +367,12 @@ async function run() {
 
             const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
 
+            // Build member electorate lookup for AI context: member_id → electorate
+            const memberElectorateMap = new Map<string, string>();
+            for (const m of members ?? []) {
+              if (m.electorate) memberElectorateMap.set(m.id, m.electorate);
+            }
+
             // Build condensed QT transcript and ask Sonnet for question timestamps
             const qtTranscript = await buildQtTranscript(parlviewVideo, qtOffsets.startSec, qtOffsets.endSec);
             const aiTimestamps = qtTranscript
@@ -376,11 +382,15 @@ async function run() {
                     questionNumber: q.questionNumber!,
                     askerName: q.askerName ?? null,
                     askerParty: q.askerParty ?? null,
+                    electorate: q.askerMemberId ? (memberElectorateMap.get(q.askerMemberId) ?? null) : null,
                   }))
                 ).catch((e) => { console.warn(`  AI timestamp extraction failed: ${e.message}`); return []; })
               : [];
 
             console.log(`  AI identified ${aiTimestamps.length}/${realQuestionsForAudio.length} question timestamps`);
+            for (const t of aiTimestamps) {
+              console.log(`    Q${t.questionNumber}: T+${t.secFromQtStart}s`);
+            }
 
             // Convert AI timestamps (secFromQtStart) to file-relative seconds, enforce monotonic order
             const assignedStarts = new Map<number, number>();
