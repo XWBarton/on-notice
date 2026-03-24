@@ -387,16 +387,12 @@ async function run() {
                 ).catch((e) => { console.warn(`  AI timestamp extraction failed: ${e.message}`); return []; })
               : [];
 
-            if (qtTranscript) {
-              const first20 = qtTranscript.split("\n").slice(0, 20).join("\n");
-              console.log(`  Transcript starts:\n${first20}`);
-            }
             console.log(`  AI identified ${aiTimestamps.length}/${realQuestionsForAudio.length} question timestamps`);
             for (const t of aiTimestamps) {
               console.log(`    Q${t.questionNumber}: T+${t.secFromQtStart}s`);
             }
 
-            // Convert AI timestamps (secFromQtStart) to file-relative seconds, enforce monotonic order
+            // First pass: assign all valid AI timestamps (file-relative, monotonic)
             const assignedStarts = new Map<number, number>();
             const aiMap = new Map(aiTimestamps.map((t) => [t.questionNumber, t.secFromQtStart]));
             let minT = qtAudioStart;
@@ -404,15 +400,34 @@ async function run() {
             for (const q of realQuestionsForAudio) {
               const secFromQt = aiMap.get(q.questionNumber!);
               const fileRelative = secFromQt != null ? qtAudioStart + secFromQt : null;
-
               if (fileRelative != null && fileRelative >= minT && fileRelative <= qtAudioEnd) {
                 assignedStarts.set(q.questionNumber!, fileRelative);
                 minT = fileRelative + 30;
-              } else {
-                // Fallback: evenly space remaining questions
-                assignedStarts.set(q.questionNumber!, minT);
-                minT += 30;
               }
+            }
+
+            // Second pass: interpolate missing questions between their known neighbours
+            const qNums = realQuestionsForAudio.map((q) => q.questionNumber!);
+            for (let i = 0; i < qNums.length; i++) {
+              if (assignedStarts.has(qNums[i])) continue;
+
+              // Find nearest found timestamps before and after
+              let prevT = qtAudioStart;
+              let nextT = qtAudioEnd;
+              let gapStart = -1, gapEnd = -1;
+              for (let j = i - 1; j >= 0; j--) {
+                if (assignedStarts.has(qNums[j])) { prevT = assignedStarts.get(qNums[j])!; gapStart = j; break; }
+              }
+              for (let j = i + 1; j < qNums.length; j++) {
+                if (assignedStarts.has(qNums[j])) { nextT = assignedStarts.get(qNums[j])!; gapEnd = j; break; }
+              }
+
+              // Count missing questions in this gap (from gapStart+1 to gapEnd-1)
+              const gapFrom = gapStart + 1;
+              const gapTo = gapEnd >= 0 ? gapEnd : qNums.length;
+              const gapSize = gapTo - gapFrom; // how many missing in the gap
+              const posInGap = i - gapFrom + 1; // 1-indexed position
+              assignedStarts.set(qNums[i], prevT + (nextT - prevT) * (posInGap / (gapSize + 1)));
             }
 
             const questionStarts = realQuestionsForAudio.map(
