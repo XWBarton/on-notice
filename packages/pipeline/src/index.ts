@@ -406,43 +406,50 @@ async function run() {
 
             const usedIdx = new Set<number>();
             const assignedStarts = new Map<number, number>(); // questionNumber → start time
+            let electorateMatchCount = 0;
 
             const realInOrder = realQuestionsForAudio
               .map((q) => ({ q, idx: allQuestionsInOrder.findIndex((aq) => aq.questionNumber === q.questionNumber) }))
               .filter(({ idx }) => idx >= 0)
               .sort((a, b) => a.idx - b.idx);
 
+            // Process in QT order — enforce monotonic timestamps so clips never overlap
+            let minT = qtAudioStart; // each question must start after this
+
             for (const { q, idx } of realInOrder) {
-              // 1. Try exact electorate match from captions
               const askerElectorate = q.askerMemberId ? memberElectorateMap.get(q.askerMemberId) : null;
               const electorateMatch = askerElectorate ? electorateToTimestamp.get(askerElectorate) : null;
-              if (electorateMatch !== undefined && electorateMatch !== null) {
+
+              // 1. Electorate match — only use if it's after the previous question
+              if (electorateMatch != null && electorateMatch >= minT) {
+                // Mark the corresponding sortedStarts index as used
+                const k = sortedStarts.findIndex((t, i) => !usedIdx.has(i) && Math.abs(t - electorateMatch) < 1);
+                if (k >= 0) usedIdx.add(k);
                 assignedStarts.set(q.questionNumber!, electorateMatch);
+                minT = electorateMatch + 30;
+                electorateMatchCount++;
                 console.log(`  Q${q.questionNumber} matched by electorate (${askerElectorate}): ${Math.floor(electorateMatch/60)}m${Math.round(electorateMatch%60)}s`);
                 continue;
               }
 
-              // 2. Nearest unused caption timestamp within 8 minutes of expected position
-              const expectedT = qtAudioStart + (idx / Math.max(nTotal - 1, 1)) * qtDuration;
+              // 2. Nearest unused caption timestamp after minT, within 8 minutes of expected position
+              const expectedT = Math.max(minT, qtAudioStart + (idx / Math.max(nTotal - 1, 1)) * qtDuration);
               let best = -1;
               let bestDist = 8 * 60;
               for (let k = 0; k < sortedStarts.length; k++) {
-                if (usedIdx.has(k)) continue;
+                if (usedIdx.has(k) || sortedStarts[k] < minT) continue;
                 const dist = Math.abs(sortedStarts[k] - expectedT);
                 if (dist < bestDist) { bestDist = dist; best = k; }
               }
               if (best >= 0) {
                 usedIdx.add(best);
                 assignedStarts.set(q.questionNumber!, sortedStarts[best]);
+                minT = sortedStarts[best] + 30;
               } else {
                 assignedStarts.set(q.questionNumber!, expectedT);
+                minT = expectedT + 30;
               }
             }
-
-            const electorateMatchCount = realInOrder.filter(({ q }) =>
-              q.askerMemberId && memberElectorateMap.has(q.askerMemberId) &&
-              electorateToTimestamp.has(memberElectorateMap.get(q.askerMemberId)!)
-            ).length;
 
             const questionStarts = realQuestionsForAudio.map(
               (q) => assignedStarts.get(q.questionNumber!) ?? qtAudioStart

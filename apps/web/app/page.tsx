@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase";
 import { redirect } from "next/navigation";
 
-export const revalidate = 900;
+export const revalidate = 0;
 
 export default async function HomePage() {
   const supabase = createClient();
