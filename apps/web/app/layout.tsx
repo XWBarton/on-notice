@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Footer } from "@/components/Footer";
+import Image from "next/image";
 
 export const metadata: Metadata = {
   title: "On Notice — Australian Parliament Daily Feed",
@@ -23,8 +24,9 @@ export default function RootLayout({
       <body>
         <header className="border-b border-gray-200 bg-white">
           <div className="mx-auto max-w-3xl px-4 py-4 flex items-center justify-between">
-            <a href="/" className="text-xl font-bold tracking-tight">
-              On Notice
+            <a href="/" className="flex items-center gap-2.5">
+              <Image src="/icon.svg" alt="On Notice" width={32} height={32} />
+              <span className="text-xl font-bold tracking-tight">On Notice</span>
             </a>
             <nav className="flex gap-6 text-sm text-gray-600">
               <a href="/calendar" className="hover:text-gray-900">Calendar</a>
