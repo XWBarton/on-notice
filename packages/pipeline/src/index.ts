@@ -362,7 +362,14 @@ async function run() {
             console.log(`  Downloaded: ${rawAudioPath}`);
 
             // 8d: Map Hansard questions to audio timestamps via AI caption parsing
-            const qtAudioStart = 30; // 30s buffer before QT start in the downloaded file
+            // The downloader passes qtOffsets (mediaSom-relative) to yt-dlp, but yt-dlp
+            // interprets section timestamps as fileSom-relative. The gap between the two
+            // references is vttOffset = mediaSomSec - fileSomSec. QT starts at
+            // (vttOffset + 30) seconds into the downloaded file, not just 30s.
+            const fileSomSec = parseInt(parlviewVideo.fileSom, 10) / 25;
+            const mediaSomSec = timecodeToSeconds(parlviewVideo.mediaSom);
+            const vttOffset = mediaSomSec - fileSomSec;
+            const qtAudioStart = Math.round(vttOffset + 30);
             const qtAudioEnd = qtAudioStart + (qtOffsets.endSec - qtOffsets.startSec);
 
             const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
