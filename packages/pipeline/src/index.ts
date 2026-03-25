@@ -352,24 +352,22 @@ async function run() {
           console.log(`  Question Time: ${Math.round(qtOffsets.startSec)}s → ${Math.round(qtOffsets.endSec)}s`);
 
             // 8c: Download Question Time audio
+            // qtOffsets are mediaSom-relative, but yt-dlp interprets section timestamps
+            // as fileSom-relative. Add vttOffset to get the correct stream positions.
+            const fileSomSec = parseInt(parlviewVideo.fileSom, 10) / 25;
+            const mediaSomSec = timecodeToSeconds(parlviewVideo.mediaSom);
+            const vttOffset = mediaSomSec - fileSomSec;
             const workDir = createAudioWorkDir(date, parliamentId);
             const rawAudioPath = await downloadQuestionTimeAudio(
               parlviewVideo.id,
-              qtOffsets.startSec,
-              qtOffsets.endSec,
+              qtOffsets.startSec + vttOffset,
+              qtOffsets.endSec + vttOffset,
               workDir
             );
             console.log(`  Downloaded: ${rawAudioPath}`);
 
-            // 8d: Map Hansard questions to audio timestamps via AI caption parsing
-            // The downloader passes qtOffsets (mediaSom-relative) to yt-dlp, but yt-dlp
-            // interprets section timestamps as fileSom-relative. The gap between the two
-            // references is vttOffset = mediaSomSec - fileSomSec. QT starts at
-            // (vttOffset + 30) seconds into the downloaded file, not just 30s.
-            const fileSomSec = parseInt(parlviewVideo.fileSom, 10) / 25;
-            const mediaSomSec = timecodeToSeconds(parlviewVideo.mediaSom);
-            const vttOffset = mediaSomSec - fileSomSec;
-            const qtAudioStart = Math.round(vttOffset + 30);
+            // QT starts 30s into the downloaded file (the downloader adds a 30s pre-buffer)
+            const qtAudioStart = 30;
             const qtAudioEnd = qtAudioStart + (qtOffsets.endSec - qtOffsets.startSec);
 
             const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
