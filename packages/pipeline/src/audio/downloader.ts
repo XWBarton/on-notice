@@ -55,14 +55,23 @@ export async function downloadQuestionTimeAudio(
     "--quiet",
   ];
 
-  await execFileAsync("yt-dlp", args, { timeout: 900_000 }); // 15 min
-
-  // yt-dlp may output .mp3 directly or need conversion
   const candidates = [
     outputPath,
     outputPath.replace(".mp3", ".m4a"),
     outputPath.replace(".mp3", ".webm"),
   ];
+
+  try {
+    await execFileAsync("yt-dlp", args, { timeout: 900_000 }); // 15 min
+  } catch (err) {
+    // yt-dlp sometimes exits non-zero on codec detection warnings but still
+    // produces a valid output file — check before propagating the error
+    const produced = candidates.find((p) => fs.existsSync(p));
+    if (!produced) throw err;
+    console.log(`  yt-dlp warned but produced file: ${produced}`);
+    return produced;
+  }
+
   const found = candidates.find((p) => fs.existsSync(p));
   if (!found) throw new Error(`yt-dlp did not produce an output file in ${outputDir}`);
 
