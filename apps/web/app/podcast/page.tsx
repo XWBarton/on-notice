@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase";
 import { format } from "date-fns";
+import { CopyRssButton } from "./CopyRssButton";
 
 export const revalidate = 3600;
 
@@ -54,12 +55,7 @@ export default async function PodcastPage() {
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Feed</p>
               <p className="font-medium text-gray-900">{feed.label}</p>
             </div>
-            <a
-              href={feed.rssUrl}
-              className="inline-flex items-center gap-1.5 text-xs font-medium bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-full px-3 py-1.5 transition-colors text-gray-700"
-            >
-              RSS Feed
-            </a>
+            <CopyRssButton url={feed.rssUrl} />
           </div>
         ))}
       </div>
