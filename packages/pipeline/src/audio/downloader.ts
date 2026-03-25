@@ -42,38 +42,33 @@ export async function downloadQuestionTimeAudio(
 
   console.log(`  Downloading Question Time audio: ${fmt(bufferedStart)} → ${fmt(bufferedEnd)}`);
 
-  const args = [
+  // Step 1: download raw (no postprocessing — let ffmpeg handle conversion)
+  const rawOutput = outputPath.replace(".mp3", ".raw.%(ext)s");
+  const dlArgs = [
     url,
     "--format", "bestaudio/Video1-2@48000-64000-Audio0",
     "--download-sections", section,
-    "--force-keyframes-at-cuts",
-    "--extract-audio",
-    "--audio-format", "mp3",
-    "--audio-quality", "64K",
-    "--output", outputPath.replace(".mp3", ".%(ext)s"),
+    "--output", rawOutput,
     "--no-playlist",
     "--quiet",
   ];
 
-  const candidates = [
-    outputPath,
-    outputPath.replace(".mp3", ".m4a"),
-    outputPath.replace(".mp3", ".webm"),
-  ];
+  await execFileAsync("yt-dlp", dlArgs, { timeout: 900_000 }); // 15 min
 
-  try {
-    await execFileAsync("yt-dlp", args, { timeout: 900_000 }); // 15 min
-  } catch (err) {
-    // yt-dlp sometimes exits non-zero on codec detection warnings but still
-    // produces a valid output file — check before propagating the error
-    const produced = candidates.find((p) => fs.existsSync(p));
-    if (!produced) throw err;
-    console.log(`  yt-dlp warned but produced file: ${produced}`);
-    return produced;
-  }
+  const rawCandidates = ["mp4", "m4a", "webm", "ts", "aac", "opus"].map((ext) =>
+    outputPath.replace(".mp3", `.raw.${ext}`)
+  );
+  const rawFile = rawCandidates.find((p) => fs.existsSync(p));
+  if (!rawFile) throw new Error(`yt-dlp did not produce a raw file in ${outputDir}`);
 
-  const found = candidates.find((p) => fs.existsSync(p));
-  if (!found) throw new Error(`yt-dlp did not produce an output file in ${outputDir}`);
+  // Step 2: convert to mp3 with ffmpeg
+  await execFileAsync("ffmpeg", ["-i", rawFile, "-vn", "-b:a", "64k", "-y", outputPath], {
+    timeout: 300_000,
+  });
+  fs.unlinkSync(rawFile);
+
+  const found = outputPath;
+  if (!fs.existsSync(found)) throw new Error(`ffmpeg did not produce ${outputPath}`);
 
   return found;
 }
