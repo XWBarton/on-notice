@@ -44,8 +44,9 @@ export async function downloadQuestionTimeAudio(
 
   const args = [
     url,
-    "--format", "Video1-2@48000-64000-Audio0/bestaudio",
+    "--format", "bestaudio/Video1-2@48000-64000-Audio0",
     "--download-sections", section,
+    "--force-keyframes-at-cuts",
     "--extract-audio",
     "--audio-format", "mp3",
     "--audio-quality", "64K",
