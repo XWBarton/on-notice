@@ -1,11 +1,31 @@
 import { createClient } from "@/lib/supabase";
+import { NextRequest } from "next/server";
 
 export const revalidate = 3600;
 
-export async function GET() {
+const CHAMBERS = {
+  fed_hor: {
+    name: "On Notice — House of Representatives",
+    description:
+      "Daily question time from the Australian House of Representatives — Dorothy Dixers removed. Just the real scrutiny. Visit on-notice.xyz for full transcripts, divisions, and bills.",
+    guid: "onnotice-fed-hor-question-time",
+    label: "House of Representatives",
+  },
+  fed_sen: {
+    name: "On Notice — Senate",
+    description:
+      "Daily question time from the Australian Senate — Dorothy Dixers removed. Just the real scrutiny. Visit on-notice.xyz for full transcripts, divisions, and bills.",
+    guid: "onnotice-fed-sen-question-time",
+    label: "Senate",
+  },
+};
+
+export async function GET(req: NextRequest) {
+  const parliamentId = (req.nextUrl.searchParams.get("parliament") ?? "fed_hor") as keyof typeof CHAMBERS;
+  const chamber = CHAMBERS[parliamentId] ?? CHAMBERS.fed_hor;
+
   const supabase = createClient();
 
-  // Pull from sitting_days directly since we store audio_url there
   const { data: sittingDays } = await supabase
     .from("sitting_days")
     .select(`
@@ -18,12 +38,12 @@ export async function GET() {
       questions(question_number, asker_name, asker_party, minister_name, subject, is_dorothy_dixer)
     `)
     .not("audio_url", "is", null)
-    .eq("parliament_id", "fed_hor")
+    .eq("parliament_id", parliamentId)
     .order("sitting_date", { ascending: false })
     .limit(50);
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://on-notice.xyz";
-  const iconUrl = `${siteUrl}/icon.svg`;
+  const artworkUrl = `${siteUrl}/podcast-artwork.png`;
 
   const items = (sittingDays ?? [])
     .map((day: any) => {
@@ -34,11 +54,12 @@ export async function GET() {
 
       const pubDate = new Date(day.sitting_date).toUTCString();
       const title = `${formatDate(day.sitting_date)} — Question Time`;
-      const description = digest?.lede ?? `Question Time from the Australian House of Representatives, ${formatDate(day.sitting_date)}.`;
-      const guid = `${siteUrl}/podcast/${day.sitting_date}`;
+      const description = digest?.lede
+        ? `${digest.lede}\n\nVisit on-notice.xyz for full transcripts, divisions, and bills.`
+        : `Question Time from the Australian ${chamber.label}, ${formatDate(day.sitting_date)}. Visit on-notice.xyz for full transcripts, divisions, and bills.`;
+      const guid = `${siteUrl}/${day.sitting_date}?parliament=${parliamentId}`;
       const durationSec = day.audio_duration_sec ?? 0;
 
-      // Podcasting 2.0: chapters (one per real question)
       const chapters = questions
         .map((q: any, i: number) => {
           const chapterTitle = q.subject
@@ -49,7 +70,6 @@ export async function GET() {
         })
         .join("\n        ");
 
-      // Podcasting 2.0: persons (askers and ministers)
       const persons = questions
         .slice(0, 5)
         .flatMap((q: any) => {
@@ -67,6 +87,7 @@ export async function GET() {
       <guid isPermaLink="false">${guid}</guid>
       <link>${guid}</link>
       <description>${escapeXml(description)}</description>
+      <itunes:image href="${artworkUrl}" />
       <enclosure url="${day.audio_url}" type="audio/mpeg" length="0" />
       <itunes:duration>${durationSec}</itunes:duration>
       <itunes:episodeType>full</itunes:episodeType>
@@ -84,9 +105,9 @@ export async function GET() {
   xmlns:content="http://purl.org/rss/1.0/modules/content/"
   xmlns:podcast="https://podcastindex.org/namespace/1.0">
   <channel>
-    <title>On Notice — Australian Parliament Question Time</title>
+    <title>${escapeXml(chamber.name)}</title>
     <link>${siteUrl}/podcast</link>
-    <description>Daily question time from the Australian House of Representatives — Dorothy Dixers removed. Just the real scrutiny.</description>
+    <description>${escapeXml(chamber.description)}</description>
     <language>en-AU</language>
     <copyright>Creative Commons CC BY-NC-ND 3.0 AU</copyright>
     <itunes:author>On Notice</itunes:author>
@@ -94,14 +115,14 @@ export async function GET() {
       <itunes:category text="Politics" />
     </itunes:category>
     <itunes:explicit>false</itunes:explicit>
-    <itunes:image href="${iconUrl}" />
+    <itunes:image href="${artworkUrl}" />
     <itunes:owner>
       <itunes:name>On Notice</itunes:name>
     </itunes:owner>
-    <podcast:guid>onnotice-fed-hor-question-time</podcast:guid>
+    <podcast:guid>${chamber.guid}</podcast:guid>
     <podcast:locked>no</podcast:locked>
     <podcast:medium>podcast</podcast:medium>
-    <podcast:image href="${iconUrl}" />
+    <podcast:image href="${artworkUrl}" />
     ${items}
   </channel>
 </rss>`;
