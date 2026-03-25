@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase";
 import { format } from "date-fns";
 import { CopyRssButton } from "./CopyRssButton";
 
-export const revalidate = 3600;
+export const revalidate = 60;
 
 const FEEDS = [
   {
