@@ -16,18 +16,6 @@ const FEEDS = [
   },
 ];
 
-// Deep-link URL schemes for common podcast apps
-function podcastLinks(rssUrl: string) {
-  const encoded = encodeURIComponent(rssUrl);
-  return [
-    { name: "Apple Podcasts", href: `https://podcasts.apple.com/podcast?feedUrl=${encoded}`, icon: "🎙" },
-    { name: "Spotify", href: `https://open.spotify.com/show?feed=${encoded}`, icon: "🎵" },
-    { name: "Pocket Casts", href: `pktc://subscribe/${rssUrl.replace(/^https?:\/\//, "")}`, icon: "📻" },
-    { name: "Overcast", href: `overcast://x-callback-url/add?url=${encoded}`, icon: "☁️" },
-    { name: "Castro", href: `castro://subscribe/${encoded}`, icon: "🔊" },
-    { name: "Copy RSS", href: rssUrl, icon: "🔗", copy: true },
-  ];
-}
 
 export default async function PodcastPage() {
   const supabase = createClient();
@@ -66,20 +54,12 @@ export default async function PodcastPage() {
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Feed</p>
               <p className="font-medium text-gray-900">{feed.label}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {podcastLinks(feed.rssUrl).map((link) => (
-                <a
-                  key={link.name}
-                  href={link.href}
-                  target={link.copy ? undefined : "_blank"}
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs font-medium bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-full px-3 py-1.5 transition-colors text-gray-700"
-                >
-                  <span>{link.icon}</span>
-                  {link.name}
-                </a>
-              ))}
-            </div>
+            <a
+              href={feed.rssUrl}
+              className="inline-flex items-center gap-1.5 text-xs font-medium bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-full px-3 py-1.5 transition-colors text-gray-700"
+            >
+              RSS Feed
+            </a>
           </div>
         ))}
       </div>
