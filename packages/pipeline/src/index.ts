@@ -383,7 +383,9 @@ async function run() {
                     askerName: q.askerName ?? null,
                     askerParty: q.askerParty ?? null,
                     electorate: q.askerMemberId ? (memberElectorateMap.get(q.askerMemberId) ?? null) : null,
-                  }))
+                    questionText: q.questionText ?? null,
+                  })),
+                  config.chamber === "lower" ? "house" : "senate"
                 ).catch((e) => { console.warn(`  AI timestamp extraction failed: ${e.message}`); return []; })
               : [];
 

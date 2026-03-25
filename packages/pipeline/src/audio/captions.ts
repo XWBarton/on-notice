@@ -1,22 +1,28 @@
 /**
  * Downloads ParlView HLS subtitle (WebVTT) captions for the Question Time window
- * and builds a condensed transcript for AI timestamp extraction.
+ * and builds a filtered transcript for AI timestamp extraction.
  *
- * VTT timestamps are local to the HLS file (seconds from fileSom).
- * We convert them to QT-relative seconds (T+0 = Question Time start) for the AI prompt.
+ * We only keep lines that contain Speaker announcement patterns
+ * (call to member/senator/leader) plus time markers every 30s.
+ * This reduces ~140K tokens of full speech content down to ~1-2K tokens.
  */
 
 import type { ParlViewVideo } from "../scrapers/parlview";
 import { timecodeToSeconds } from "../scrapers/parlview";
 
 interface VttEntry {
-  sec: number;
+  sec: number; // VTT file-local seconds
   text: string;
 }
 
-/**
- * Parse a merged VTT string into (timestamp_sec, text) entries, sorted by time.
- */
+/** Lines matching Speaker announcements — "call to the member for X" */
+const SPEAKER_CALL_RE =
+  /\b(?:give|gave|recall|I\s+call|now\s+call|next\s+call|the\s+call)\s+(?:the\s+)?(?:call\s+to\s+)?(?:the\s+)?(?:honourable\s+(?:the\s+)?)?(?:member\s+for|senator|leader\s+of\s+the\s+opposition|deputy\s+leader|manager\s+of\s+opposition)/i;
+
+/** Broader catch — any line mentioning "member for" or leadership roles */
+const MEMBER_FOR_RE =
+  /\bmember\s+for\s+[A-Z]|\bsenator\s+(?:for\s+)?[A-Z]|\bleader\s+of\s+the\s+opposition\b|\bmanager\s+of\s+opposition\b|\bdeputy\s+(?:prime\s+minister|leader)\b/i;
+
 function parseVtt(vttContent: string): VttEntry[] {
   const tsPat = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->/m;
   const tagPat = /<[^>]+>/g;
@@ -56,8 +62,58 @@ function parseVtt(vttContent: string): VttEntry[] {
 }
 
 /**
- * Download QT subtitle segments in parallel batches.
+ * Keep only terminal-form rolling captions (drop incomplete rolling frames).
+ * A frame is incomplete if the next entry's text starts with it.
  */
+function condenseCaptions(entries: VttEntry[]): VttEntry[] {
+  const result: VttEntry[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const curr = entries[i];
+    const next = entries[i + 1];
+    if (next && next.text.startsWith(curr.text) && next.text.length > curr.text.length) continue;
+    result.push(curr);
+  }
+  return result;
+}
+
+/**
+ * Filter condensed entries to Speaker-call lines + 30-second time markers.
+ * Reduces ~140K tokens of full speech content to ~1–2K tokens.
+ */
+function buildSpeakerCallTranscript(
+  condensed: VttEntry[],
+  vttOffset: number,
+  qtStartSec: number,
+  qtEndSec: number
+): string {
+  const lines: string[] = [];
+  let lastMarkerSec = -60;
+  let linesAfterCall = 0;
+  const MAX_AFTER = 4; // include first few lines of each question for content matching
+
+  for (const e of condensed) {
+    const qtRelSec = Math.round(e.sec - vttOffset - qtStartSec);
+    if (qtRelSec < -30 || qtRelSec > qtEndSec - qtStartSec + 30) continue;
+
+    // Insert time marker every 30s
+    if (qtRelSec - lastMarkerSec >= 30) {
+      lines.push(`--- T+${Math.max(0, qtRelSec)}s ---`);
+      lastMarkerSec = qtRelSec;
+    }
+
+    const isSpeakerCall = SPEAKER_CALL_RE.test(e.text) || MEMBER_FOR_RE.test(e.text);
+    if (isSpeakerCall) {
+      lines.push(`T+${qtRelSec}s: ${e.text}`);
+      linesAfterCall = MAX_AFTER; // reset — include next N lines (question onset)
+    } else if (linesAfterCall > 0) {
+      lines.push(`T+${qtRelSec}s: ${e.text}`);
+      linesAfterCall--;
+    }
+  }
+
+  return lines.join("\n");
+}
+
 async function fetchSubtitleSegments(
   subtitleBaseUrl: string,
   segmentTemplate: string,
@@ -91,24 +147,9 @@ async function fetchSubtitleSegments(
 }
 
 /**
- * Condense rolling captions to their terminal form.
- * Rolling captions increment word-by-word; skip entries that are a strict prefix
- * of the next entry (they're incomplete rolling frames).
- */
-function condenseCaptions(entries: VttEntry[]): VttEntry[] {
-  const result: VttEntry[] = [];
-  for (let i = 0; i < entries.length; i++) {
-    const curr = entries[i];
-    const next = entries[i + 1];
-    if (next && next.text.startsWith(curr.text) && next.text.length > curr.text.length) continue;
-    result.push(curr);
-  }
-  return result;
-}
-
-/**
- * Download and condense the QT subtitle track.
- * Returns a "T+Ns: text" transcript (seconds from QT start) suitable for AI parsing.
+ * Download QT subtitles and return a Speaker-call-filtered transcript.
+ * Format: time markers every 30s + "T+Ns: <caption text>" for speaker announcements only.
+ * Typical output: 50–150 lines, ~1–2K tokens.
  */
 export async function buildQtTranscript(
   video: ParlViewVideo,
@@ -163,21 +204,11 @@ export async function buildQtTranscript(
 
   const vttContent = await fetchSubtitleSegments(subtitleBaseUrl, segTemplate, startIdx, endIdx);
   const allEntries = parseVtt(vttContent);
+  const condensed = condenseCaptions(allEntries);
+  const transcript = buildSpeakerCallTranscript(condensed, vttOffset, qtStartSec, qtEndSec);
 
-  // Filter to QT window only
-  const qtEntries = allEntries.filter(
-    (e) => e.sec >= qtStartLocal - 30 && e.sec <= qtEndLocal + 30
-  );
+  const lineCount = transcript.split("\n").filter((l) => !l.startsWith("---")).length;
+  console.log(`  Speaker-call transcript: ${lineCount} lines (from ${allEntries.length} raw entries)`);
 
-  // Condense rolling captions to terminal forms
-  const condensed = condenseCaptions(qtEntries);
-
-  // Format as T+Ns relative to QT start
-  const lines = condensed.map((e) => {
-    const qtRelSec = Math.round(e.sec - vttOffset - qtStartSec);
-    return `T+${qtRelSec}s: ${e.text}`;
-  });
-
-  console.log(`  Condensed transcript: ${condensed.length} lines (from ${allEntries.length} raw entries)`);
-  return lines.join("\n");
+  return transcript;
 }

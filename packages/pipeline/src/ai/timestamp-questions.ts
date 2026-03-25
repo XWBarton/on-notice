@@ -1,55 +1,86 @@
 /**
- * Uses Claude Sonnet to find exact question start timestamps from a condensed
- * ParlView WebVTT transcript. More reliable than regex for rolling captions.
+ * Uses Claude Sonnet to find exact question start timestamps from a filtered
+ * ParlView WebVTT transcript containing only Speaker announcement lines.
  */
 
 import { callClaude, SONNET } from "./client";
 
 export interface QuestionTimestamp {
   questionNumber: number;
-  /** Seconds from the start of Question Time (T+0 = first Speaker call) */
+  /** Seconds from the start of Question Time (T+0 = QT begins) */
   secFromQtStart: number;
 }
 
 export async function extractTimestampsWithAI(
-  condensedTranscript: string,
-  questions: { questionNumber: number; askerName: string | null; askerParty: string | null; electorate: string | null }[]
+  speakerCallTranscript: string,
+  questions: {
+    questionNumber: number;
+    askerName: string | null;
+    askerParty: string | null;
+    electorate: string | null;
+    questionText?: string | null;
+  }[],
+  chamber: "house" | "senate" = "house"
 ): Promise<QuestionTimestamp[]> {
-  if (questions.length === 0 || !condensedTranscript.trim()) return [];
+  if (questions.length === 0 || !speakerCallTranscript.trim()) return [];
 
   const questionList = questions
     .map((q) => {
-      const electorate = q.electorate ? `, ${q.electorate}` : "";
-      return `Q${q.questionNumber}: ${q.askerName ?? "Unknown"} (${q.askerParty ?? "?"}${electorate})`;
+      const parts = [q.askerName ?? "Unknown", `(${q.askerParty ?? "?"}`];
+      if (q.electorate) parts.push(`, ${q.electorate}`);
+      parts.push(")");
+      let line = `Q${q.questionNumber}: ${parts.join("")}`;
+      if (q.questionText) {
+        // First ~30 words of the question as a secondary match hint
+        const snippet = q.questionText.split(/\s+/).slice(0, 30).join(" ");
+        line += ` — starts: "${snippet}${snippet.split(/\s+/).length >= 30 ? "..." : ""}"`;
+      }
+      return line;
     })
     .join("\n");
 
+  const memberTitle = chamber === "senate" ? "senator" : "member for [Electorate]";
+  const callPattern =
+    chamber === "senate"
+      ? `"I give the call to Senator [Name]" or "Call to Senator [Name]"`
+      : `"I give the call to the member for [Electorate]" or "Call to the honourable member for [Electorate]"`;
+
   const result = await callClaude<QuestionTimestamp[]>(
     SONNET,
-    `You are analysing Australian Federal Parliament Question Time captions to find when each question starts.
-Timestamps in the transcript are seconds from the start of Question Time (T+0s = QT begins).
-The Speaker announces questioners with phrases like:
-  "I give the call to the member for [Electorate]"
-  "Call to the honourable member for [Electorate]"
-  "I give the call to the Leader of the Opposition"
-  "Call to the Manager of Opposition Business"
-  "Recall to the member for [Electorate]"
-Return ONLY a JSON array with no explanation. Example: [{"questionNumber":1,"secFromQtStart":45}]`,
-    `Questions to find (from Hansard, in order):
+    `You are finding question start timestamps in Australian Parliament Question Time captions.
+The transcript contains only Speaker announcement lines and time markers (--- T+Xs ---).
+Timestamps are seconds from the start of Question Time (T+0 = QT begins).
+
+The Speaker announces each questioner with phrases like: ${callPattern}
+Also: "I give the call to the Leader of the Opposition", "Call to the Manager of Opposition Business", etc.
+
+Question numbers may not be sequential — Dorothy Dixer questions (same-party questions) are omitted.
+For questions where no name/electorate is given, identify them by counting Speaker calls in order after the last identified question.
+Q1 is always the very first Speaker call in the transcript, even if the subtitle starts mid-question.
+
+Return ONLY a JSON array, no explanation: [{"questionNumber":1,"secFromQtStart":45}]`,
+    `Questions to find (non-Dorothy-Dixer questions from Hansard, in QT order):
 ${questionList}
 
-Format is: Q<number>: <name> (<party>, <electorate>)
-Search the transcript for "call to the member for <electorate>" to find when the Speaker calls each questioner.
-Only include questions you can confidently identify. Omit any you cannot find.
-Output JSON array only, no explanation: [{"questionNumber": N, "secFromQtStart": T}, ...]
+For each question, find when the Speaker calls that questioner.
+- Primary: search for the Speaker calling "member for [electorate]" or "Senator [Name]"
+- Secondary: if no Speaker call found, look for the question's opening words in the lines immediately following a Speaker call
+- For unknown questions (no name/electorate): count Speaker calls in order after the last identified question
+- Q1: if the first call is already mid-question (subtitle lag), use the earliest timestamp in the transcript
 
-Transcript:
-${condensedTranscript}`,
+Return JSON array: [{"questionNumber": N, "secFromQtStart": T}, ...]
+Only include questions you can identify. Omit if genuinely not found.
+
+Transcript (Speaker calls + first lines of each question):
+${speakerCallTranscript}`,
     1024
   );
 
   if (!Array.isArray(result)) return [];
   return result.filter(
-    (r) => typeof r.questionNumber === "number" && typeof r.secFromQtStart === "number"
+    (r) =>
+      typeof r.questionNumber === "number" &&
+      typeof r.secFromQtStart === "number" &&
+      r.secFromQtStart >= 0
   );
 }
