@@ -72,5 +72,6 @@ export async function downloadQuestionTimeAudio(
 export function createAudioWorkDir(date: string, parliamentId: string): string {
   const dir = path.join(os.tmpdir(), `on-notice-audio-${date}-${parliamentId}`);
   fs.mkdirSync(dir, { recursive: true });
+  fs.chmodSync(dir, 0o755); // ensure writable if restored from cache with wrong permissions
   return dir;
 }
