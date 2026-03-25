@@ -101,10 +101,13 @@ function buildSpeakerCallTranscript(
       lastMarkerSec = qtRelSec;
     }
 
+    // Include all lines in first 5 minutes — Q1's Speaker call is never captured
+    // due to subtitle lag, so we need the full content to match Q1 by question text
+    const inOpeningWindow = qtRelSec <= 300;
     const isSpeakerCall = SPEAKER_CALL_RE.test(e.text) || MEMBER_FOR_RE.test(e.text);
-    if (isSpeakerCall) {
+    if (inOpeningWindow || isSpeakerCall) {
       lines.push(`T+${qtRelSec}s: ${e.text}`);
-      linesAfterCall = MAX_AFTER; // reset — include next N lines (question onset)
+      if (isSpeakerCall) linesAfterCall = MAX_AFTER;
     } else if (linesAfterCall > 0) {
       lines.push(`T+${qtRelSec}s: ${e.text}`);
       linesAfterCall--;

@@ -64,9 +64,9 @@ ${questionList}
 
 For each question, find when the Speaker calls that questioner.
 - Primary: search for the Speaker calling "member for [electorate]" or "Senator [Name]"
-- Secondary: if no Speaker call found, look for the question's opening words in the lines immediately following a Speaker call
+- Secondary: if no Speaker call found, search for the question's opening words (provided after "— starts:") anywhere in the transcript
+- Q1: the Speaker's call for Q1 is never captured (subtitle lag). Find Q1 by searching for its opening words in the full transcript
 - For unknown questions (no name/electorate): count Speaker calls in order after the last identified question
-- Q1: if the first call is already mid-question (subtitle lag), use the earliest timestamp in the transcript
 
 Return JSON array: [{"questionNumber": N, "secFromQtStart": T}, ...]
 Only include questions you can identify. Omit if genuinely not found.
