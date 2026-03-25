@@ -34,7 +34,11 @@ export async function downloadQuestionTimeAudio(
   const section = `*${fmt(bufferedStart)}-${fmt(bufferedEnd)}`;
 
   // Reuse existing download if present (speeds up iterative testing)
-  const existing = [outputPath, outputPath.replace(".mp3", ".m4a"), outputPath.replace(".mp3", ".webm")].find((p) => fs.existsSync(p));
+  const existingCandidates = [
+    outputPath,
+    ...["mp4", "m4a", "webm", "ts", "aac", "opus"].map((ext) => outputPath.replace(".mp3", `.raw.${ext}`)),
+  ];
+  const existing = existingCandidates.find((p) => fs.existsSync(p));
   if (existing) {
     console.log(`  Reusing cached audio: ${existing}`);
     return existing;
@@ -42,7 +46,7 @@ export async function downloadQuestionTimeAudio(
 
   console.log(`  Downloading Question Time audio: ${fmt(bufferedStart)} → ${fmt(bufferedEnd)}`);
 
-  // Step 1: download raw (no postprocessing — let ffmpeg handle conversion)
+  // Download raw — let editor.ts handle all encoding/cutting
   const rawOutput = outputPath.replace(".mp3", ".raw.%(ext)s");
   const dlArgs = [
     url,
@@ -61,16 +65,7 @@ export async function downloadQuestionTimeAudio(
   const rawFile = rawCandidates.find((p) => fs.existsSync(p));
   if (!rawFile) throw new Error(`yt-dlp did not produce a raw file in ${outputDir}`);
 
-  // Step 2: convert to mp3 with ffmpeg
-  await execFileAsync("ffmpeg", ["-i", rawFile, "-vn", "-acodec", "libmp3lame", "-ab", "64k", "-y", outputPath], {
-    timeout: 300_000,
-  });
-  fs.unlinkSync(rawFile);
-
-  const found = outputPath;
-  if (!fs.existsSync(found)) throw new Error(`ffmpeg did not produce ${outputPath}`);
-
-  return found;
+  return rawFile;
 }
 
 /** Create a temporary working directory for audio processing */
