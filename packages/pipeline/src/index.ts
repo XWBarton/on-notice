@@ -23,7 +23,6 @@ import { upsertDivisions } from "./db/upsert-divisions";
 import { findParlViewVideo, questionTimeOffsets, timecodeToSeconds } from "./scrapers/parlview";
 import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
-import { generateIntroClip, introText } from "./audio/tts";
 import { uploadEpisode, uploadClip } from "./audio/uploader";
 import { buildQtTranscript } from "./audio/captions";
 import { extractTimestampsWithAI } from "./ai/timestamp-questions";
@@ -456,13 +455,6 @@ async function run() {
               const fmt = (s: number) => `${Math.floor(s/60)}m${Math.round(s%60)}s`;
               console.log(`  Q${q.questionNumber}: ${fmt(startSec)} → ${fmt(endSec)}`);
 
-              // Generate TTS intro clip
-              const introPath = `${workDir}/intro-q${q.questionNumber}.mp3`;
-              const intro = introText(q.askerName ?? null, q.askerParty ?? null, q.ministerName ?? null, q.questionNumber ?? i + 1);
-              await generateIntroClip(intro, introPath).catch((e) => {
-                console.warn(`  TTS failed for Q${q.questionNumber}: ${e.message}`);
-              });
-
               segments.push({
                 questionNumber: q.questionNumber ?? i + 1,
                 askerName: q.askerName ?? null,
@@ -470,7 +462,7 @@ async function run() {
                 ministerName: q.ministerName ?? null,
                 startSec,
                 endSec,
-                introClipPath: fs.existsSync(introPath) ? introPath : undefined,
+                introClipPath: undefined,
               });
             }
 
