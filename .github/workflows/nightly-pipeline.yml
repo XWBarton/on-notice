@@ -43,10 +43,12 @@ jobs:
 
       - name: Install system dependencies
         run: |
+          # Remove pre-installed ffmpeg (lacks libmp3lame) so the apt version takes precedence
+          sudo rm -f /usr/local/bin/ffmpeg /usr/local/bin/ffprobe || true
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg libavcodec-extra
           pip install yt-dlp
-          ffmpeg -encoders 2>&1 | grep -E "mp3|aac|opus|vorbis" || true
+          which ffmpeg && ffmpeg -encoders 2>&1 | grep -E "mp3|aac|opus|vorbis" || true
 
       - name: Restore audio cache
         uses: actions/cache@v4
