@@ -43,7 +43,9 @@ export async function GET(req: NextRequest) {
     .limit(50);
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://on-notice.xyz";
-  const artworkUrl = `${siteUrl}/podcast-artwork.png`;
+  const artworkUrl = parliamentId === "fed_sen"
+    ? `${siteUrl}/podcast-artwork-senate.png`
+    : `${siteUrl}/podcast-artwork.png`;
 
   const items = (sittingDays ?? [])
     .map((day: any) => {

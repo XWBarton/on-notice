@@ -32,6 +32,8 @@ const PARTY_NORMALIZE: Record<string, { short_name: string; colour: string }> = 
   KAP: { short_name: "KAP", colour: "#795548" },
   UAP: { short_name: "UAP", colour: "#FDD835" },
   CA:  { short_name: "CA",  colour: "#4B9FB4" },
+  AV:  { short_name: "AV",  colour: "#7B61B2" },
+  AUSTRA: { short_name: "AV", colour: "#7B61B2" },
   SPEAKE: { short_name: "SPK", colour: "#9E9E9E" },
   SPK: { short_name: "SPK", colour: "#9E9E9E" },
 };
@@ -41,12 +43,14 @@ function normalizeParty(raw: string | null | undefined): { short_name: string; c
   return PARTY_NORMALIZE[raw] ?? { short_name: raw, colour: "#9E9E9E" };
 }
 
-// Political position by party_id: 0 = government right, 10 = opposition left
+// Political position by party_id: 0 = ALP (left/gallery-left), 10 = LIB (right/gallery-right)
 const PARTY_POSITION: Record<string, number> = {
   alp: 0,
   grn: 5,
+  av: 5.3,
   cli200: 5.5,
   ind: 6,
+  ca: 6.3,
   kap: 6.5,
   uap: 7,
   on: 7.5,
@@ -56,36 +60,45 @@ const PARTY_POSITION: Record<string, number> = {
   lib: 10,
 };
 
-// Rows: [radius, seatCount] — total must match chamber size
-const ROWS_HOR: [number, number][] = [
-  [155, 22],
-  [197, 28],
-  [239, 34],
-  [281, 40],
-  [323, 27],
-]; // total: 151
+// Arc from ~10° to ~170° (hemicycle with small margin from horizontal)
+const ARC_START = Math.PI * 0.055;
+const ARC_END = Math.PI * 0.945;
 
-const ROWS_SEN: [number, number][] = [
-  [155, 16],
-  [197, 20],
-  [239, 24],
-  [281, 16],
-]; // total: 76
-
-// Arc from ~11° to ~169° (slight margin from horizontal)
-const ARC_START = Math.PI * 0.06;
-const ARC_END = Math.PI * 0.94;
-
-// SVG coordinate origin for arc center (bottom center, off-canvas)
+// SVG coordinate origin for arc center (bottom center)
 const CX = 360;
 const CY = 440;
+
+// Compute proportional seat counts for a hemicycle so angular spacing is
+// consistent across rows. seats_i ∝ radius_i, adjusted to hit total exactly.
+function buildRows(radii: number[], total: number): [number, number][] {
+  const radiiSum = radii.reduce((s, r) => s + r, 0);
+  const raw = radii.map((r) => (r / radiiSum) * total);
+  // Round, then fix rounding error on the largest row
+  const rounded = raw.map(Math.round);
+  const diff = total - rounded.reduce((s, n) => s + n, 0);
+  // Apply remainder to the row with the largest fractional part
+  const fracs = raw.map((v, i) => ({ i, frac: v - Math.floor(v) }));
+  fracs.sort((a, b) => b.frac - a.frac);
+  for (let k = 0; k < Math.abs(diff); k++) {
+    rounded[fracs[k].i] += Math.sign(diff);
+  }
+  return radii.map((r, i) => [r, rounded[i]]);
+}
+
+const RADII_HOR = [150, 192, 234, 276, 318];
+const RADII_SEN = [150, 192, 234, 276];
+
+const ROWS_HOR = buildRows(RADII_HOR, 151);
+const ROWS_SEN = buildRows(RADII_SEN, 76);
 
 function computePositions(rows: [number, number][]) {
   const positions: { x: number; y: number; t: number }[] = [];
   for (const [radius, count] of rows) {
     for (let i = 0; i < count; i++) {
       const t = count === 1 ? 0.5 : i / (count - 1);
-      const angle = ARC_START + t * (ARC_END - ARC_START);
+      // t=0 → ARC_END (left side), t=1 → ARC_START (right side)
+      // so ALP (position 0) sits on the left, LIB (10) on the right — matching gallery view
+      const angle = ARC_END - t * (ARC_END - ARC_START);
       positions.push({
         x: CX + radius * Math.cos(angle),
         y: CY - radius * Math.sin(angle),
