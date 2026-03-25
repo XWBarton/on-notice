@@ -34,8 +34,12 @@ const PARTY_NORMALIZE: Record<string, { short_name: string; colour: string }> = 
   CA:  { short_name: "CA",  colour: "#4B9FB4" },
   AV:  { short_name: "AV",  colour: "#7B61B2" },
   AUSTRA: { short_name: "AV", colour: "#7B61B2" },
+  JACQUI: { short_name: "JLN", colour: "#E07B39" },
+  COUNTR: { short_name: "CLP", colour: "#B07D3A" },
   SPEAKE: { short_name: "SPK", colour: "#9E9E9E" },
-  SPK: { short_name: "SPK", colour: "#9E9E9E" },
+  SPK:    { short_name: "SPK", colour: "#9E9E9E" },
+  PRESID: { short_name: "PRES", colour: "#9E9E9E" },
+  DEPUTY: { short_name: "DEP",  colour: "#BDBDBD" },
 };
 
 function normalizeParty(raw: string | null | undefined): { short_name: string; colour: string } {
@@ -55,9 +59,13 @@ const PARTY_POSITION: Record<string, number> = {
   uap: 7,
   on: 7.5,
   phon: 7.5,
+  jln: 6.2,
   lnp: 8,
   nat: 9,
+  clp: 9.5,
   lib: 10,
+  deputy: 5.8,  // Deputy President — crossbench
+  presid: 6,    // fallback if not filtered as presiding officer
 };
 
 // Arc from ~10° to ~170° (hemicycle with small margin from horizontal)
@@ -134,7 +142,7 @@ function partyLegend(members: Member[]) {
 
 function isPresidingOfficer(m: Member) {
   const norm = normalizeParty(m.parties?.short_name).short_name;
-  if (norm === "SPK") return true;
+  if (norm === "SPK" || norm === "PRES") return true;
   const role = (m.role ?? "").toLowerCase();
   return role.includes("speaker") || role.includes("president of the senate");
 }
@@ -283,22 +291,46 @@ export function SeatMap({ horMembers, senMembers }: SeatMapProps) {
 
           <p className="text-sm text-gray-400 mt-3 text-center">{members.length} members</p>
 
-          {/* Member list */}
-          <div className="mt-8 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-2">
-            {sorted.map((member) => (
-              <div key={member.id} className="flex items-center gap-1.5 text-sm py-1 border-b border-gray-100">
-                {member.parties && (
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ backgroundColor: member.parties.colour_hex ?? "#9E9E9E" }}
-                  />
-                )}
-                <span className="text-gray-800 truncate">{member.name_display}</span>
-                {member.electorate && (
-                  <span className="text-gray-400 text-xs truncate hidden sm:block">{member.electorate}</span>
-                )}
-              </div>
-            ))}
+          {/* Member list — grouped by party */}
+          <div className="mt-8 space-y-6">
+            {(() => {
+              // Group sorted members by normalised party short_name
+              const groups: { short_name: string; colour: string; members: Member[] }[] = [];
+              for (const member of sorted) {
+                const norm = normalizeParty(member.parties?.short_name);
+                const existing = groups.find((g) => g.short_name === norm.short_name);
+                if (existing) {
+                  existing.members.push(member);
+                } else {
+                  groups.push({ short_name: norm.short_name, colour: norm.colour, members: [member] });
+                }
+              }
+              return groups.map((group) => (
+                <div key={group.short_name}>
+                  {/* Party header */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span
+                      className="inline-block w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: group.colour }}
+                    />
+                    <span className="text-sm font-semibold text-gray-700">{group.short_name}</span>
+                    <span className="text-xs text-gray-400">{group.members.length}</span>
+                    <div className="flex-1 h-px bg-gray-100 ml-1" />
+                  </div>
+                  {/* Members grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1">
+                    {group.members.map((member) => (
+                      <div key={member.id} className="flex items-baseline gap-2 py-0.5">
+                        <span className="text-sm text-gray-800 font-medium leading-snug">{member.name_display}</span>
+                        {member.electorate && (
+                          <span className="text-xs text-gray-400 shrink-0">{member.electorate}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         </>
       )}
