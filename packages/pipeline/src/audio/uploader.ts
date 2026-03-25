@@ -32,7 +32,7 @@ export async function uploadClip(
     Key: key,
     Body: body,
     ContentType: "audio/mpeg",
-    CacheControl: "public, max-age=31536000, immutable",
+    CacheControl: "public, max-age=3600",
   }));
 
   return `${CDN_BASE}/${key}`;
@@ -53,7 +53,7 @@ export async function uploadEpisode(
     Key: key,
     Body: body,
     ContentType: "audio/mpeg",
-    CacheControl: "public, max-age=31536000, immutable",
+    CacheControl: "public, max-age=3600",
   }));
 
   return `${CDN_BASE}/${key}`;
