@@ -132,16 +132,31 @@ function partyLegend(members: Member[]) {
   return Array.from(seen.values()).sort((a, b) => b.count - a.count);
 }
 
+function isPresidingOfficer(m: Member) {
+  const norm = normalizeParty(m.parties?.short_name).short_name;
+  if (norm === "SPK") return true;
+  const role = (m.role ?? "").toLowerCase();
+  return role.includes("speaker") || role.includes("president of the senate");
+}
+
 export function SeatMap({ horMembers, senMembers }: SeatMapProps) {
   const [chamber, setChamber] = useState<"fed_hor" | "fed_sen">("fed_hor");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const members = chamber === "fed_hor" ? horMembers : senMembers;
   const rows = chamber === "fed_hor" ? ROWS_HOR : ROWS_SEN;
-  const sorted = sortByParty(members);
+
+  const presiding = members.find(isPresidingOfficer) ?? null;
+  const regularMembers = presiding ? members.filter((m) => m.id !== presiding.id) : members;
+
+  const sorted = sortByParty(regularMembers);
   const positions = computePositions(rows);
   const legend = partyLegend(members);
   const hoveredMember = hoveredId ? members.find((m) => m.id === hoveredId) : null;
+
+  // Speaker/President sits at the focal point of the arc, bottom centre
+  const SPEAKER_X = CX;
+  const SPEAKER_Y = CY - 62;
 
   return (
     <div>
@@ -180,6 +195,42 @@ export function SeatMap({ horMembers, senMembers }: SeatMapProps) {
               className="w-full"
               style={{ maxHeight: 380 }}
             >
+              {/* Speaker / President of the Senate — centre focal point */}
+              {presiding && (() => {
+                const isHovered = hoveredId === presiding.id;
+                const label = chamber === "fed_sen" ? "PRES" : "SPK";
+                return (
+                  <g
+                    key={presiding.id}
+                    style={{ cursor: "pointer" }}
+                    onMouseEnter={() => setHoveredId(presiding.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                  >
+                    <rect
+                      x={SPEAKER_X - 16}
+                      y={SPEAKER_Y - 12}
+                      width={32}
+                      height={24}
+                      rx={4}
+                      fill={isHovered ? "#555" : "#9E9E9E"}
+                      stroke={isHovered ? "#111" : "white"}
+                      strokeWidth={isHovered ? 2 : 1}
+                    />
+                    <text
+                      x={SPEAKER_X}
+                      y={SPEAKER_Y + 4}
+                      textAnchor="middle"
+                      fontSize={9}
+                      fontWeight="bold"
+                      fill="white"
+                      style={{ pointerEvents: "none", userSelect: "none" }}
+                    >
+                      {label}
+                    </text>
+                  </g>
+                );
+              })()}
+
               {sorted.map((member, i) => {
                 const pos = positions[i];
                 if (!pos) return null;
