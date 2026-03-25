@@ -62,7 +62,7 @@ export async function downloadQuestionTimeAudio(
   if (!rawFile) throw new Error(`yt-dlp did not produce a raw file in ${outputDir}`);
 
   // Step 2: convert to mp3 with ffmpeg
-  await execFileAsync("ffmpeg", ["-i", rawFile, "-vn", "-b:a", "64k", "-y", outputPath], {
+  await execFileAsync("ffmpeg", ["-i", rawFile, "-vn", "-acodec", "libmp3lame", "-ab", "64k", "-y", outputPath], {
     timeout: 300_000,
   });
   fs.unlinkSync(rawFile);
