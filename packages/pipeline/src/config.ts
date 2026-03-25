@@ -76,6 +76,16 @@ export const FEDERAL_PARTIES: Record<string, { id: string; name: string; short_n
   "ON": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },
   "Australia's Voice": { id: "av", name: "Australia's Voice", short_name: "AV", colour_hex: "#7B61B2" },
   "AUSTRA": { id: "av", name: "Australia's Voice", short_name: "AV", colour_hex: "#7B61B2" },
+  "Jacqui Lambie Network": { id: "jln", name: "Jacqui Lambie Network", short_name: "JLN", colour_hex: "#E07B39" },
+  "JACQUI": { id: "jln", name: "Jacqui Lambie Network", short_name: "JLN", colour_hex: "#E07B39" },
+  "Country Liberal Party": { id: "clp", name: "Country Liberal Party", short_name: "CLP", colour_hex: "#B07D3A" },
+  "COUNTR": { id: "clp", name: "Country Liberal Party", short_name: "CLP", colour_hex: "#B07D3A" },
+  "Speaker": { id: "spk", name: "Speaker", short_name: "SPK", colour_hex: "#9E9E9E" },
+  "SPEAKE": { id: "spk", name: "Speaker", short_name: "SPK", colour_hex: "#9E9E9E" },
+  "President of the Senate": { id: "presid", name: "President of the Senate", short_name: "PRES", colour_hex: "#9E9E9E" },
+  "PRESID": { id: "presid", name: "President of the Senate", short_name: "PRES", colour_hex: "#9E9E9E" },
+  "Deputy President": { id: "deputy", name: "Deputy President", short_name: "DEP", colour_hex: "#BDBDBD" },
+  "DEPUTY": { id: "deputy", name: "Deputy President", short_name: "DEP", colour_hex: "#BDBDBD" },
 };
 
 export const OPEN_AUSTRALIA_API = "https://www.openaustralia.org.au/api";
