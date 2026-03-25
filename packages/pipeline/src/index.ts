@@ -520,6 +520,30 @@ async function run() {
       .update({ pipeline_status: "complete" })
       .eq("id", sittingDayId);
 
+    // Trigger Vercel ISR revalidation so the page reflects new data immediately
+    const revalidateUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}/api/revalidate`
+      : process.env.APP_URL
+        ? `${process.env.APP_URL}/api/revalidate`
+        : null;
+    const revalidateSecret = process.env.REVALIDATE_SECRET;
+    if (revalidateUrl && revalidateSecret) {
+      try {
+        const res = await fetch(revalidateUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-revalidate-token": revalidateSecret },
+          body: JSON.stringify({ date, parliament: parliamentId }),
+        });
+        if (res.ok) {
+          console.log("  ✓ Vercel cache revalidated");
+        } else {
+          console.warn(`  ⚠ Revalidation returned ${res.status}`);
+        }
+      } catch (e) {
+        console.warn(`  ⚠ Revalidation failed: ${e}`);
+      }
+    }
+
     console.log("\n✓ Pipeline complete");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

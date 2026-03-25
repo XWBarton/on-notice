@@ -8,7 +8,7 @@ import { FeedNav } from "@/components/DailyFeed/FeedNav";
 import { QuestionSection } from "@/components/DailyFeed/QuestionSection";
 import { SCHEDULED_SITTING_DATES } from "@/app/calendar/page";
 
-export const revalidate = 3600;
+export const revalidate = 60;
 
 export default async function DatePage({
   params,

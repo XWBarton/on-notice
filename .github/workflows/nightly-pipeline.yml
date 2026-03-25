@@ -67,6 +67,8 @@ jobs:
           R2_CDN_URL: ${{ secrets.R2_CDN_URL }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          APP_URL: ${{ secrets.APP_URL }}
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
         run: |
           ARGS="--parliament ${{ matrix.parliament }}"
           DATE_ARG="${{ github.event.inputs.date }}"
