@@ -74,6 +74,8 @@ export const FEDERAL_PARTIES: Record<string, { id: string; name: string; short_n
   "One Nation": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },
   "PAULIN": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },
   "ON": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },
+  "Australia's Voice": { id: "av", name: "Australia's Voice", short_name: "AV", colour_hex: "#7B61B2" },
+  "AUSTRA": { id: "av", name: "Australia's Voice", short_name: "AV", colour_hex: "#7B61B2" },
 };
 
 export const OPEN_AUSTRALIA_API = "https://www.openaustralia.org.au/api";
