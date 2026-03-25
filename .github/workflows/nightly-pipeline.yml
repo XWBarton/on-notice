@@ -44,7 +44,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg libavcodec-extra
           pip install yt-dlp
 
       - name: Restore audio cache
