@@ -71,42 +71,54 @@ export async function findParliamentYouTubeVideo(
   return null;
 }
 
-// YouTube InnerTube API — public key used by all YouTube clients
-const INNERTUBE_URL = "https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
-
 /**
  * Download YouTube auto-generated captions as a VTT string.
  *
- * Uses the YouTube InnerTube API (no authentication, no yt-dlp) to get the
- * player response and caption track URLs, then fetches the VTT directly.
- * This avoids the bot-detection that blocks yt-dlp --dump-json from CI.
+ * YouTube embeds `captionTracks` JSON server-side in the page HTML — no
+ * authentication required.  We fetch the public watch page with a browser
+ * User-Agent, extract the ASR English track URL, and download the VTT.
  */
 export async function downloadYouTubeCaptions(videoId: string): Promise<string | null> {
-  console.log(`  Fetching YouTube player info for ${videoId} via InnerTube API...`);
+  console.log(`  Fetching YouTube page for caption URLs (${videoId})...`);
 
-  const playerRes = await fetch(INNERTUBE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      videoId,
-      context: {
-        client: { clientName: "ANDROID", clientVersion: "17.31.35", androidSdkVersion: 30 },
-      },
-    }),
+  const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
   });
 
-  if (!playerRes.ok) {
-    console.warn(`  InnerTube API error: ${playerRes.status}`);
+  if (!pageRes.ok) {
+    console.warn(`  YouTube page fetch failed: ${pageRes.status}`);
     return null;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const player = await playerRes.json() as any;
-  const tracks: Array<{ languageCode: string; kind?: string; baseUrl: string }> =
-    player?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+  const html = await pageRes.text();
 
-  if (tracks.length === 0) {
-    console.warn("  No caption tracks in InnerTube response");
+  const idx = html.indexOf('"captionTracks":');
+  if (idx === -1) {
+    console.warn("  No captionTracks found in YouTube page HTML");
+    return null;
+  }
+
+  // Extract the JSON array that follows "captionTracks":
+  const arrStart = html.indexOf("[", idx);
+  let depth = 0;
+  let arrEnd = arrStart;
+  for (let i = arrStart; i < html.length; i++) {
+    if (html[i] === "[") depth++;
+    else if (html[i] === "]") {
+      depth--;
+      if (depth === 0) { arrEnd = i + 1; break; }
+    }
+  }
+
+  let tracks: Array<{ languageCode: string; kind?: string; baseUrl: string }>;
+  try {
+    tracks = JSON.parse(html.slice(arrStart, arrEnd));
+  } catch {
+    console.warn("  Failed to parse captionTracks JSON");
     return null;
   }
 
@@ -116,7 +128,7 @@ export async function downloadYouTubeCaptions(videoId: string): Promise<string |
     tracks.find((t) => t.languageCode === "en");
 
   if (!track?.baseUrl) {
-    console.warn("  No English caption track found");
+    console.warn("  No English auto-caption track found");
     return null;
   }
 

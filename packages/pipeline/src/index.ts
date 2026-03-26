@@ -20,9 +20,10 @@ import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
 import { summariseDivision } from "./ai/summarise-division";
 import { upsertDivisions } from "./db/upsert-divisions";
-import { findParlViewVideo, questionTimeOffsets, timecodeToSeconds } from "./scrapers/parlview";
+import { findParlViewVideo, questionTimeOffsets } from "./scrapers/parlview";
 import { findParliamentYouTubeVideo, downloadYouTubeCaptions } from "./scrapers/youtube";
-import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
+import { findPodcastEpisode } from "./scrapers/podcast";
+import { downloadPodcastAudio, createAudioWorkDir } from "./audio/downloader";
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { uploadEpisode, uploadClip } from "./audio/uploader";
 import { buildQtTranscriptFromYouTubeCaptions } from "./audio/captions";
@@ -351,25 +352,22 @@ async function run() {
             console.log(`  ParlView segments (${parlviewVideo.segments.length}): ${parlviewVideo.segments.map(s => s.segmentTitle).join(", ")}`);
           console.log(`  Question Time: ${Math.round(qtOffsets.startSec)}s → ${Math.round(qtOffsets.endSec)}s`);
 
-            // 8c: Download QT audio from ParlView (reliable, no auth needed)
-            // qtOffsets are mediaSom-relative; add vttOffset to get fileSom-relative stream positions
-            const fileSomSec = parseInt(parlviewVideo.fileSom, 10) / 25;
-            const mediaSomSec = timecodeToSeconds(parlviewVideo.mediaSom);
-            const vttOffset = mediaSomSec - fileSomSec;
+            // 8c: Find podcast episode and download MP3 directly (no yt-dlp)
             const workDir = createAudioWorkDir(date, parliamentId);
-            const rawAudioPath = await downloadQuestionTimeAudio(
-              parlviewVideo.id,
-              qtOffsets.startSec + vttOffset,
-              qtOffsets.endSec + vttOffset,
-              workDir
-            );
+            const podcastEpisode = await findPodcastEpisode(date, parliamentId as "fed_hor" | "fed_sen");
+            if (!podcastEpisode) {
+              console.log("  No podcast episode found — skipping audio");
+            } else {
+
+            const rawAudioPath = await downloadPodcastAudio(podcastEpisode.audioUrl, workDir);
             console.log(`  Downloaded: ${rawAudioPath}`);
 
-            const qtDuration = qtOffsets.endSec - qtOffsets.startSec;
+            // Podcast starts at QT start (no pre-buffer), duration from RSS feed
+            const qtDuration = podcastEpisode.durationSec;
 
-            // QT starts 30s into the downloaded file (the downloader adds a 30s pre-buffer)
-            const qtAudioStart = 30;
-            const qtAudioEnd = qtAudioStart + qtDuration;
+            // Podcast IS Question Time — starts at T=0, ends at podcast duration
+            const qtAudioStart = 0;
+            const qtAudioEnd = qtDuration;
 
             const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
 
@@ -382,15 +380,13 @@ async function run() {
             // 8d: Get YouTube captions for QT transcript (full-day coverage, no 4-hour VTT limit)
             const ytVideo = await findParliamentYouTubeVideo(date, parliamentId as "fed_hor" | "fed_sen");
             const ytCaptionsVtt = ytVideo ? await downloadYouTubeCaptions(ytVideo.videoId) : null;
-            const captionsResult = ytCaptionsVtt
+            const qtTranscript = ytCaptionsVtt
               ? buildQtTranscriptFromYouTubeCaptions(ytCaptionsVtt, qtDuration)
               : null;
 
-            if (!captionsResult) {
-              console.log("  No YouTube captions available — skipping question timestamp extraction");
+            if (!qtTranscript) {
+              console.log("  No YouTube captions available — question timestamps will be interpolated");
             }
-
-            const qtTranscript = captionsResult?.transcript ?? null;
 
             // Ask Sonnet for question timestamps from the YouTube caption transcript
             const aiTimestamps = qtTranscript ? await extractTimestampsWithAI(
@@ -517,6 +513,7 @@ async function run() {
 
             // Keep temp dir so the raw audio can be reused on the next run
             // (manually delete /tmp/on-notice-audio-* to force a fresh download)
+            } // end if (podcastEpisode)
           }
         }
       } catch (audioErr) {
