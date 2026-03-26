@@ -90,7 +90,7 @@ export async function downloadYouTubeCaptions(
       [
         url,
         "--write-auto-sub",
-        "--sub-lang", "en",
+        "--sub-lang", "en-orig",
         "--sub-format", "vtt",
         "--skip-download",
         "-o", outputTemplate,
