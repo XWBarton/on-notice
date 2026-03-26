@@ -13,7 +13,7 @@
  * This reduces ~140K tokens of full speech content down to ~1-2K tokens.
  */
 
-import type { ParlViewVideo } from "../scrapers/parlview";
+import type { ParlViewVideo, ParlViewCaption } from "../scrapers/parlview";
 import { timecodeToSeconds } from "../scrapers/parlview";
 import type { SubtitleEntry } from "../scrapers/youtube";
 
@@ -259,6 +259,49 @@ export function buildQtTranscriptFromYouTubeCaptions(
 
   if (lineCount === 0) {
     console.warn("  YouTube captions: no speaker-call lines found");
+    return null;
+  }
+
+  return transcript;
+}
+
+/**
+ * Build a QT transcript from the ParlView closed-captions API.
+ *
+ * The API returns wall-clock SMPTE timecodes for the full day. We filter to
+ * the QT window using the segment timecodes, then convert to QT-relative seconds
+ * (T+0 = QT start) and apply the same speaker-call filtering.
+ *
+ * @param captions     Array from fetchParlViewCaptions()
+ * @param qtSegmentIn  SMPTE timecode of QT start, e.g. "14:01:02:14"
+ * @param qtSegmentOut SMPTE timecode of QT end,   e.g. "15:10:15:24"
+ */
+export function buildQtTranscriptFromParlViewCaptions(
+  captions: ParlViewCaption[],
+  qtSegmentIn: string,
+  qtSegmentOut: string
+): string | null {
+  const qtStartSec = timecodeToSeconds(qtSegmentIn);
+  const qtEndSec   = timecodeToSeconds(qtSegmentOut);
+  const qtDuration = qtEndSec - qtStartSec;
+
+  // Convert to VttEntry[] with QT-relative timestamps
+  const allEntries: VttEntry[] = captions
+    .map((c) => ({
+      sec: timecodeToSeconds(c.In) - qtStartSec,
+      text: c.Text.replace(/\s+/g, " ").trim(),
+    }))
+    .filter((e) => e.sec >= -30 && e.sec <= qtDuration + 30 && e.text.length > 0);
+
+  const condensed = condenseCaptions(allEntries);
+  // vttOffset=0, qtStartSec=0 — entries are already QT-relative
+  const transcript = buildSpeakerCallTranscript(condensed, 0, 0, qtDuration);
+
+  const lineCount = transcript.split("\n").filter((l) => !l.startsWith("---")).length;
+  console.log(`  ParlView captions transcript: ${lineCount} speaker-call lines (from ${allEntries.length} QT entries)`);
+
+  if (lineCount === 0) {
+    console.warn("  ParlView captions: no speaker-call lines found in QT window");
     return null;
   }
 

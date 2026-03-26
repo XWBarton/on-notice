@@ -20,13 +20,11 @@ import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
 import { summariseDivision } from "./ai/summarise-division";
 import { upsertDivisions } from "./db/upsert-divisions";
-import { findParlViewVideo, questionTimeOffsets } from "./scrapers/parlview";
-import { findParliamentYouTubeVideo, downloadYouTubeCaptions } from "./scrapers/youtube";
-import { findPodcastEpisode } from "./scrapers/podcast";
-import { downloadPodcastAudio, createAudioWorkDir } from "./audio/downloader";
+import { findParlViewVideo, questionTimeOffsets, fetchParlViewCaptions } from "./scrapers/parlview";
+import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { uploadEpisode, uploadClip } from "./audio/uploader";
-import { buildQtTranscriptFromYouTubeCaptions } from "./audio/captions";
+import { buildQtTranscriptFromParlViewCaptions } from "./audio/captions";
 import { extractTimestampsWithAI } from "./ai/timestamp-questions";
 import * as fs from "node:fs";
 
@@ -352,22 +350,20 @@ async function run() {
             console.log(`  ParlView segments (${parlviewVideo.segments.length}): ${parlviewVideo.segments.map(s => s.segmentTitle).join(", ")}`);
           console.log(`  Question Time: ${Math.round(qtOffsets.startSec)}s → ${Math.round(qtOffsets.endSec)}s`);
 
-            // 8c: Find podcast episode and download MP3 directly (no yt-dlp)
+            // 8c: Download Question Time audio directly from ParlView HLS
             const workDir = createAudioWorkDir(date, parliamentId);
-            const podcastEpisode = await findPodcastEpisode(date, parliamentId as "fed_hor" | "fed_sen");
-            if (!podcastEpisode) {
-              console.log("  No podcast episode found — skipping audio");
-            } else {
-
-            const rawAudioPath = await downloadPodcastAudio(podcastEpisode.audioUrl, workDir);
+            const rawAudioPath = await downloadQuestionTimeAudio(
+              parlviewVideo.id,
+              qtOffsets.startSec,
+              qtOffsets.endSec,
+              workDir
+            );
             console.log(`  Downloaded: ${rawAudioPath}`);
 
-            // Podcast starts at QT start (no pre-buffer), duration from RSS feed
-            const qtDuration = podcastEpisode.durationSec;
-
-            // Podcast IS Question Time — starts at T=0, ends at podcast duration
-            const qtAudioStart = 0;
-            const qtAudioEnd = qtDuration;
+            // The downloader buffers 30s before qtStartSec — track that offset so
+            // buildEpisode can convert recording-relative timestamps to file-relative.
+            const bufferedStart = Math.max(0, qtOffsets.startSec - 30);
+            const qtDuration = qtOffsets.endSec - qtOffsets.startSec;
 
             const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
 
@@ -377,18 +373,27 @@ async function run() {
               if (m.electorate) memberElectorateMap.set(m.id, m.electorate);
             }
 
-            // 8d: Get YouTube captions for QT transcript (full-day coverage, no 4-hour VTT limit)
-            const ytVideo = await findParliamentYouTubeVideo(date, parliamentId as "fed_hor" | "fed_sen");
-            const ytCaptionsVtt = ytVideo ? await downloadYouTubeCaptions(ytVideo.videoId) : null;
-            const qtTranscript = ytCaptionsVtt
-              ? buildQtTranscriptFromYouTubeCaptions(ytCaptionsVtt, qtDuration)
-              : null;
+            // 8d: Fetch captions from ParlView captions API (full-day wall-clock timecodes,
+            // covers QT at any time of day — no 4-hour HLS subtitle limit).
+            const qtSegment = parlviewVideo.segments.find((s) => /question time/i.test(s.segmentTitle));
+            let qtTranscript: string | null = null;
 
-            if (!qtTranscript) {
-              console.log("  No YouTube captions available — question timestamps will be interpolated");
+            if (qtSegment) {
+              const parlviewCaptions = await fetchParlViewCaptions(parlviewVideo.id);
+              if (parlviewCaptions.length > 0) {
+                qtTranscript = buildQtTranscriptFromParlViewCaptions(
+                  parlviewCaptions,
+                  qtSegment.segmentIn,
+                  qtSegment.segmentOut
+                );
+              }
             }
 
-            // Ask Sonnet for question timestamps from the YouTube caption transcript
+            if (!qtTranscript) {
+              console.log("  No captions available — question timestamps will be interpolated");
+            }
+
+            // 8e: Ask Sonnet for question timestamps
             const aiTimestamps = qtTranscript ? await extractTimestampsWithAI(
               qtTranscript,
               realQuestionsForAudio.map((q) => ({
@@ -406,62 +411,63 @@ async function run() {
               console.log(`    Q${t.questionNumber}: T+${t.secFromQtStart}s`);
             }
 
-            // First pass: assign all valid AI timestamps (file-relative, monotonic)
-            const assignedStarts = new Map<number, number>();
+            // 8f: Map AI timestamps (QT-relative) to recording-relative positions,
+            // then interpolate any gaps between known timestamps.
+            //
+            // seg.startSec is recording-relative; buildEpisode subtracts bufferedStart
+            // to get the position within the downloaded MP3 file.
+            const qtEnd = qtOffsets.endSec; // recording-relative QT end
+
+            const assignedStartsQt = new Map<number, number>(); // qNum → secFromQtStart
             const aiMap = new Map(aiTimestamps.map((t) => [t.questionNumber, t.secFromQtStart]));
-            let minT = qtAudioStart;
+            let minQtSec = 0;
 
             for (const q of realQuestionsForAudio) {
               const secFromQt = aiMap.get(q.questionNumber!);
-              const fileRelative = secFromQt != null ? qtAudioStart + secFromQt : null;
-              if (fileRelative != null && fileRelative >= minT && fileRelative <= qtAudioEnd) {
-                assignedStarts.set(q.questionNumber!, fileRelative);
-                minT = fileRelative + 30;
+              if (secFromQt != null && secFromQt >= minQtSec && secFromQt <= qtDuration) {
+                assignedStartsQt.set(q.questionNumber!, secFromQt);
+                minQtSec = secFromQt + 30;
               }
             }
 
-            // Second pass: interpolate missing questions between their known neighbours
+            // Interpolate missing questions between known neighbours
             const qNums = realQuestionsForAudio.map((q) => q.questionNumber!);
             for (let i = 0; i < qNums.length; i++) {
-              if (assignedStarts.has(qNums[i])) continue;
+              if (assignedStartsQt.has(qNums[i])) continue;
 
-              // Find nearest found timestamps before and after
-              let prevT = qtAudioStart;
-              let nextT = qtAudioEnd;
+              let prevQt = 0;
+              let nextQt = qtDuration;
               let gapStart = -1, gapEnd = -1;
               for (let j = i - 1; j >= 0; j--) {
-                if (assignedStarts.has(qNums[j])) { prevT = assignedStarts.get(qNums[j])!; gapStart = j; break; }
+                if (assignedStartsQt.has(qNums[j])) { prevQt = assignedStartsQt.get(qNums[j])!; gapStart = j; break; }
               }
               for (let j = i + 1; j < qNums.length; j++) {
-                if (assignedStarts.has(qNums[j])) { nextT = assignedStarts.get(qNums[j])!; gapEnd = j; break; }
+                if (assignedStartsQt.has(qNums[j])) { nextQt = assignedStartsQt.get(qNums[j])!; gapEnd = j; break; }
               }
 
-              // Count missing questions in this gap (from gapStart+1 to gapEnd-1)
               const gapFrom = gapStart + 1;
               const gapTo = gapEnd >= 0 ? gapEnd : qNums.length;
-              const gapSize = gapTo - gapFrom; // how many missing in the gap
-              const posInGap = i - gapFrom + 1; // 1-indexed position
-              assignedStarts.set(qNums[i], prevT + (nextT - prevT) * (posInGap / (gapSize + 1)));
+              const gapSize = gapTo - gapFrom;
+              const posInGap = i - gapFrom + 1;
+              assignedStartsQt.set(qNums[i], prevQt + (nextQt - prevQt) * (posInGap / (gapSize + 1)));
             }
 
-            const questionStarts = realQuestionsForAudio.map(
-              (q) => assignedStarts.get(q.questionNumber!) ?? qtAudioStart
-            );
-
-            // Ends: start of next question, or qtAudioEnd for the last
-            const questionEnds = realQuestionsForAudio.map((q, i) =>
-              questionStarts[i + 1] ?? qtAudioEnd
-            );
-
+            // Convert to recording-relative and build segments
             const segments: QuestionSegment[] = [];
+            const qtStartRec = qtOffsets.startSec; // recording-relative QT start
 
             for (let i = 0; i < realQuestionsForAudio.length; i++) {
               const q = realQuestionsForAudio[i];
-              const startSec = questionStarts[i] ?? qtAudioStart;
-              const endSec = questionEnds[i] ?? qtAudioEnd;
+              const secFromQtStart = assignedStartsQt.get(q.questionNumber!) ?? 0;
+              const secFromQtEnd = i + 1 < qNums.length
+                ? (assignedStartsQt.get(qNums[i + 1]) ?? qtDuration)
+                : qtDuration;
+
+              const startSec = qtStartRec + secFromQtStart; // recording-relative
+              const endSec = qtStartRec + secFromQtEnd;     // recording-relative
 
               const fmt = (s: number) => `${Math.floor(s/60)}m${Math.round(s%60)}s`;
-              console.log(`  Q${q.questionNumber}: ${fmt(startSec)} → ${fmt(endSec)}`);
+              console.log(`  Q${q.questionNumber}: ${fmt(startSec)} → ${fmt(endSec)} (T+${Math.round(secFromQtStart)}s–T+${Math.round(secFromQtEnd)}s)`);
 
               segments.push({
                 questionNumber: q.questionNumber ?? i + 1,
@@ -474,18 +480,18 @@ async function run() {
               });
             }
 
-            // 8e: Build episode
+            // 8g: Build episode — pass bufferedStart so editor can convert to file-relative
             const episodePath = `${workDir}/episode.mp3`;
             const { durationSec, clipPaths } = await buildEpisode(
               rawAudioPath,
-              0, // startSec/endSec are already file-relative (0-based from downloaded MP3 start)
+              bufferedStart,
               segments,
               episodePath,
               workDir
             );
             console.log(`  Episode built: ${Math.round(durationSec / 60)}min`);
 
-            // 8f: Upload episode to R2
+            // 8h: Upload episode to R2
             const audioUrl = await uploadEpisode(episodePath, parliamentId, date);
             console.log(`  Uploaded: ${audioUrl}`);
 
@@ -495,13 +501,12 @@ async function run() {
               audio_duration_sec: durationSec,
             }).eq("id", sittingDayId);
 
-            // 8g: Upload per-question clips and store URLs
+            // 8i: Upload per-question clips and store URLs
             for (const seg of segments) {
               const clipPath = clipPaths.get(seg.questionNumber);
               if (!clipPath || !fs.existsSync(clipPath)) continue;
               try {
                 const clipUrl = await uploadClip(clipPath, parliamentId, date, seg.questionNumber);
-                // Find matching question row by question_number + sitting_day_id
                 await db.from("questions").update({ audio_clip_url: clipUrl })
                   .eq("sitting_day_id", sittingDayId)
                   .eq("question_number", seg.questionNumber);
@@ -510,10 +515,8 @@ async function run() {
                 console.warn(`  Clip upload failed for Q${seg.questionNumber}: ${clipErr}`);
               }
             }
-
-            // Keep temp dir so the raw audio can be reused on the next run
-            // (manually delete /tmp/on-notice-audio-* to force a fresh download)
-            } // end if (podcastEpisode)
+            // Keep temp dir so raw audio can be reused on the next run
+            // (delete /tmp/on-notice-audio-* to force a fresh download)
           }
         }
       } catch (audioErr) {

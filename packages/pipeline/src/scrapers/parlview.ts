@@ -70,6 +70,34 @@ export function questionTimeOffsets(
   return { startSec: Math.max(0, startSec), endSec };
 }
 
+export interface ParlViewCaption {
+  /** Wall-clock SMPTE timecode of caption start, e.g. "14:01:38:04" */
+  In: string;
+  /** Wall-clock SMPTE timecode of caption end */
+  Out: string;
+  Text: string;
+}
+
+/**
+ * Fetch closed captions for a ParlView video from the captions API.
+ * Returns the full day's captions with wall-clock SMPTE timecodes.
+ * The API requires POST (GET returns 405).
+ */
+export async function fetchParlViewCaptions(videoId: string): Promise<ParlViewCaption[]> {
+  const res = await fetch(`https://vod.uat.aph.gov.au/api/videos/captions/${videoId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!res.ok) {
+    console.warn(`  ParlView captions API returned ${res.status}`);
+    return [];
+  }
+  const data = await res.json() as ParlViewCaption[];
+  console.log(`  Fetched ${data.length} caption entries from ParlView captions API`);
+  return Array.isArray(data) ? data : [];
+}
+
 export async function findParlViewVideo(
   date: string,
   parliamentId: "fed_hor" | "fed_sen"
