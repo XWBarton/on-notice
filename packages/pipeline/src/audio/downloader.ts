@@ -134,6 +134,26 @@ export async function downloadYouTubeQuestionTimeAudio(
   return outputPath;
 }
 
+/**
+ * Download a podcast episode MP3 directly from a CDN URL (no yt-dlp required).
+ * Uses curl for reliable large-file downloading with redirect support.
+ */
+export async function downloadPodcastAudio(
+  audioUrl: string,
+  outputDir: string
+): Promise<string> {
+  const outputPath = path.join(outputDir, "question-time-raw.mp3");
+
+  if (fs.existsSync(outputPath)) {
+    console.log(`  Reusing cached audio: ${outputPath}`);
+    return outputPath;
+  }
+
+  console.log(`  Downloading podcast MP3...`);
+  await execFileAsync("curl", ["-L", "-o", outputPath, audioUrl], { timeout: 300_000 });
+  return outputPath;
+}
+
 /** Create a temporary working directory for audio processing */
 export function createAudioWorkDir(date: string, parliamentId: string): string {
   const dir = path.join(os.tmpdir(), `on-notice-audio-${date}-${parliamentId}`);

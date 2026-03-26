@@ -236,47 +236,31 @@ export async function buildQtTranscript(
 }
 
 /**
- * Build a QT transcript from full-day YouTube auto-captions.
+ * Build a QT transcript from YouTube auto-captions.
  *
- * YouTube VTT timestamps are 0-based from the start of the video, so there is
- * no offset calculation needed.  We locate the QT window by searching for the
- * first "Question Time" / "Questions without notice" announcement, then use
- * `qtDurationSec` (from ParlView segment metadata) to determine the QT end.
+ * The @AUSParliamentLive YouTube videos are already cut to just Question Time
+ * (they start at QT start, T=0), so no QT-window detection is needed.
+ * VTT timestamps are 0-based from the start of the video.
  *
- * Returns { transcript, qtStartInYt } so the caller can use qtStartInYt for
- * time-section audio downloads, or null if QT cannot be located.
+ * Returns the filtered transcript string, or null if no speaker-call lines found.
  */
 export function buildQtTranscriptFromYouTubeCaptions(
   vttContent: string,
   qtDurationSec: number
-): { transcript: string; qtStartInYt: number } | null {
+): string | null {
   const allEntries = parseVtt(vttContent);
   const condensed = condenseCaptions(allEntries);
 
-  // Find the first entry that announces Question Time
-  const qtOpenEntry = condensed.find((e) => QT_OPEN_RE.test(e.text));
-  if (!qtOpenEntry) {
-    console.warn("  YouTube captions: could not find 'Question Time' announcement — no QT window detected");
-    return null;
-  }
-
-  const qtStartInYt = qtOpenEntry.sec;
-  const qtEndInYt = qtStartInYt + qtDurationSec;
-
-  console.log(
-    `  YouTube captions: QT detected at T+${Math.round(qtStartInYt)}s (${new Date(qtStartInYt * 1000).toISOString().slice(11, 19)} from video start)`
-  );
-
-  // vttOffset=0 because YouTube VTT is already 0-based; qtStartSec/qtEndSec are in that same space
-  const transcript = buildSpeakerCallTranscript(condensed, 0, qtStartInYt, qtEndInYt);
+  // vttOffset=0, qtStartSec=0 — video starts at QT start
+  const transcript = buildSpeakerCallTranscript(condensed, 0, 0, qtDurationSec);
 
   const lineCount = transcript.split("\n").filter((l) => !l.startsWith("---")).length;
   console.log(`  YouTube speaker-call transcript: ${lineCount} lines (from ${allEntries.length} raw entries)`);
 
   if (lineCount === 0) {
-    console.warn("  YouTube captions: no speaker-call lines found in QT window");
+    console.warn("  YouTube captions: no speaker-call lines found");
     return null;
   }
 
-  return { transcript, qtStartInYt };
+  return transcript;
 }
