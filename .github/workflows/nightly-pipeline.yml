@@ -54,7 +54,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/on-notice-audio-*
-          key: audio-v4-${{ matrix.parliament }}-${{ github.event.inputs.date || 'today' }}
+          key: audio-v5-${{ matrix.parliament }}-${{ github.event.inputs.date || 'today' }}
 
       - name: Run pipeline
         env:

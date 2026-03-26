@@ -72,6 +72,68 @@ export async function downloadQuestionTimeAudio(
   return outputPath;
 }
 
+/**
+ * Download Question Time audio from the Australian Parliament Live YouTube channel.
+ * Uses yt-dlp to resolve the stream URL and ffmpeg to cut and encode the QT section.
+ *
+ * @param videoId       YouTube video ID
+ * @param qtStartInYt   Seconds from YouTube video start where QT begins
+ * @param qtEndInYt     Seconds from YouTube video start where QT ends
+ * @param outputDir     Working directory for output file
+ */
+export async function downloadYouTubeQuestionTimeAudio(
+  videoId: string,
+  qtStartInYt: number,
+  qtEndInYt: number,
+  outputDir: string
+): Promise<string> {
+  const outputPath = path.join(outputDir, "question-time-raw.mp3");
+
+  if (fs.existsSync(outputPath)) {
+    console.log(`  Reusing cached audio: ${outputPath}`);
+    return outputPath;
+  }
+
+  const bufferedStart = Math.max(0, qtStartInYt - 30);
+  const bufferedEnd = qtEndInYt + 30;
+  const duration = bufferedEnd - bufferedStart;
+
+  const fmt = (s: number) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  };
+
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  console.log(`  Getting YouTube stream URL for ${videoId}...`);
+
+  const { stdout: urlOutput } = await execFileAsync("yt-dlp", [
+    url,
+    "--format", "bestaudio",
+    "--get-url",
+    "--no-playlist",
+  ], { timeout: 60_000 });
+
+  const streamUrl = urlOutput.trim().split("\n")[0];
+  console.log(`  Downloading YouTube QT audio via ffmpeg: ${fmt(bufferedStart)} → ${fmt(bufferedEnd)}`);
+
+  await execFileAsync("ffmpeg", [
+    "-allowed_extensions", "ALL",
+    "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
+    "-ss", String(bufferedStart),
+    "-i", streamUrl,
+    "-t", String(duration),
+    "-vn",
+    "-acodec", "libmp3lame",
+    "-ab", "64k",
+    "-y",
+    outputPath,
+  ], { timeout: 900_000 });
+
+  return outputPath;
+}
+
 /** Create a temporary working directory for audio processing */
 export function createAudioWorkDir(date: string, parliamentId: string): string {
   const dir = path.join(os.tmpdir(), `on-notice-audio-${date}-${parliamentId}`);
