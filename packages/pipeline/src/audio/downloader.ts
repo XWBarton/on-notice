@@ -1,6 +1,8 @@
 /**
- * Downloads Question Time audio from ParlView using yt-dlp.
- * Only downloads the Question Time window to save bandwidth and time.
+ * Downloads Question Time audio from ParlView using yt-dlp + ffmpeg.
+ * yt-dlp resolves the stream URL; ffmpeg handles the HLS download and encoding.
+ * This avoids fragmented MP4 container issues that arise when yt-dlp downloads
+ * HLS sections directly (the resulting fMP4 files lack a proper moov atom).
  */
 
 import { execFile } from "node:child_process";
@@ -17,10 +19,15 @@ export async function downloadQuestionTimeAudio(
   endSec: number,
   outputDir: string
 ): Promise<string> {
-  const url = `https://www.aph.gov.au/News_and_Events/Watch_Read_Listen/ParlView/video/${parlviewId}`;
+  const pageUrl = `https://www.aph.gov.au/News_and_Events/Watch_Read_Listen/ParlView/video/${parlviewId}`;
   const outputPath = path.join(outputDir, `question-time-raw.mp3`);
 
-  // Format seconds as HH:MM:SS for yt-dlp --download-sections
+  // Add 30s buffer on each side
+  const bufferedStart = Math.max(0, startSec - 30);
+  const bufferedEnd = endSec + 30;
+  const duration = bufferedEnd - bufferedStart;
+
+  // Format seconds as HH:MM:SS for logging
   const fmt = (s: number) => {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
@@ -28,44 +35,41 @@ export async function downloadQuestionTimeAudio(
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   };
 
-  // Add 30s buffer on each side
-  const bufferedStart = Math.max(0, startSec - 30);
-  const bufferedEnd = endSec + 30;
-  const section = `*${fmt(bufferedStart)}-${fmt(bufferedEnd)}`;
-
   // Reuse existing download if present (speeds up iterative testing)
-  const existingCandidates = [
-    outputPath,
-    ...["mp4", "m4a", "webm", "ts", "aac", "opus"].map((ext) => outputPath.replace(".mp3", `.raw.${ext}`)),
-  ];
-  const existing = existingCandidates.find((p) => fs.existsSync(p));
-  if (existing) {
-    console.log(`  Reusing cached audio: ${existing}`);
-    return existing;
+  if (fs.existsSync(outputPath)) {
+    console.log(`  Reusing cached audio: ${outputPath}`);
+    return outputPath;
   }
 
-  console.log(`  Downloading Question Time audio: ${fmt(bufferedStart)} → ${fmt(bufferedEnd)}`);
-
-  // Download raw — let editor.ts handle all encoding/cutting
-  const rawOutput = outputPath.replace(".mp3", ".raw.%(ext)s");
-  const dlArgs = [
-    url,
-    "--format", "bestaudio/Video1-2@48000-64000-Audio0",
-    "--download-sections", section,
-    "--output", rawOutput,
+  console.log(`  Getting stream URL for ${parlviewId}...`);
+  // Use yt-dlp only to resolve the stream URL — avoids fMP4 container issues
+  // from yt-dlp's own --download-sections HLS handling
+  const { stdout: urlOutput } = await execFileAsync("yt-dlp", [
+    pageUrl,
+    "--format", "bestaudio",
+    "--get-url",
     "--no-playlist",
-    "--quiet",
-  ];
+  ], { timeout: 60_000 });
 
-  await execFileAsync("yt-dlp", dlArgs, { timeout: 900_000 }); // 15 min
+  const streamUrl = urlOutput.trim().split("\n")[0];
+  console.log(`  Downloading Question Time audio via ffmpeg: ${fmt(bufferedStart)} → ${fmt(bufferedEnd)}`);
 
-  const rawCandidates = ["mp4", "m4a", "webm", "ts", "aac", "opus"].map((ext) =>
-    outputPath.replace(".mp3", `.raw.${ext}`)
-  );
-  const rawFile = rawCandidates.find((p) => fs.existsSync(p));
-  if (!rawFile) throw new Error(`yt-dlp did not produce a raw file in ${outputDir}`);
+  // ffmpeg handles HLS natively: pre-input -ss seeks within the m3u8 playlist (0-based),
+  // and re-encoding to MP3 produces a clean file with timestamps starting at 0.
+  await execFileAsync("ffmpeg", [
+    "-allowed_extensions", "ALL",
+    "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
+    "-ss", String(bufferedStart),
+    "-i", streamUrl,
+    "-t", String(duration),
+    "-vn",
+    "-acodec", "libmp3lame",
+    "-ab", "64k",
+    "-y",
+    outputPath,
+  ], { timeout: 900_000 }); // 15 min
 
-  return rawFile;
+  return outputPath;
 }
 
 /** Create a temporary working directory for audio processing */
