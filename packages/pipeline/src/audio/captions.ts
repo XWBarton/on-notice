@@ -166,8 +166,10 @@ export async function buildQtTranscript(
 
   const fileSomSec = parseInt(video.fileSom, 10) / 25;
   const mediaSomSec = timecodeToSeconds(video.mediaSom);
+  // vttOffset converts VTT local timestamps (0-based from recording start) to mediaSom-relative time.
+  // VTT local time = mediaSom-relative time - vttOffset  →  mediaSom-relative = VTT local + vttOffset
+  // Equivalently: QT in VTT local time = qtStartSec - (-vttOffset) = qtStartSec + vttOffset = qtStartLocal
   const vttOffset = mediaSomSec - fileSomSec;
-
   const qtStartLocal = qtStartSec + vttOffset;
   const qtEndLocal = qtEndSec + vttOffset;
 
@@ -197,13 +199,21 @@ export async function buildQtTranscript(
 
   const extinfMatch = m3u8Text.match(/#EXTINF:([\d.]+)/);
   const segDuration = extinfMatch ? parseFloat(extinfMatch[1]) : 3.84;
+  const totalSegments = segLines.length;
+  const vttDurationSec = totalSegments * segDuration;
 
   const startIdx = Math.max(0, Math.floor((qtStartLocal - 60) / segDuration));
-  const endIdx = Math.ceil((qtEndLocal + 60) / segDuration);
+  const endIdx = Math.min(totalSegments - 1, Math.ceil((qtEndLocal + 60) / segDuration));
+
+  if (startIdx >= totalSegments) {
+    console.warn(`  Caption transcript: QT window (${Math.round(qtStartLocal)}s–${Math.round(qtEndLocal)}s) is beyond the subtitle stream (${Math.round(vttDurationSec)}s). No subtitles for QT.`);
+    return null;
+  }
+
   const segTemplate = `${segMatch[1]}{{N}}${segMatch[3]}`;
   const subtitleBaseUrl = subtitleM3u8Url.substring(0, subtitleM3u8Url.lastIndexOf("/"));
 
-  console.log(`  Downloading subtitle segments ${startIdx}–${endIdx} (${endIdx - startIdx + 1} segs)...`);
+  console.log(`  Downloading subtitle segments ${startIdx}–${endIdx} (${endIdx - startIdx + 1} segs, total ${totalSegments})...`);
 
   const vttContent = await fetchSubtitleSegments(subtitleBaseUrl, segTemplate, startIdx, endIdx);
   const allEntries = parseVtt(vttContent);
