@@ -5,7 +5,6 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { getSubtitles } from "youtube-caption-extractor";
 
 const execFileAsync = promisify(execFile);
 
@@ -78,24 +77,122 @@ export interface SubtitleEntry {
   text: string;
 }
 
+// InnerTube API constants — ANDROID client avoids WEB bot-detection
+const INNERTUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+const ANDROID_CLIENT_VERSION = "19.35.36";
+const ANDROID_SDK = 30;
+
 /**
- * Fetch YouTube auto-generated captions via youtube-caption-extractor.
+ * Parse a WebVTT string (with inline timing tags) into SubtitleEntry[].
+ * Keeps only the "terminal" form of rolling captions and converts to seconds.
+ */
+function parseVttToEntries(vttText: string): SubtitleEntry[] {
+  const tsPat = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->/m;
+  const tagPat = /<[^>]+>/g;
+  const entries: SubtitleEntry[] = [];
+
+  for (const block of vttText.split(/\n\n+/)) {
+    const lines = block.trim().split("\n");
+    if (lines.length < 2) continue;
+    const tsLine = lines.find((l) => l.includes("-->"));
+    if (!tsLine) continue;
+    const tsMatch = tsPat.exec(tsLine);
+    if (!tsMatch) continue;
+    const [h, m, s] = tsMatch[1].split(":").map(Number);
+    const start = h * 3600 + m * 60 + s;
+    const text = lines
+      .filter((l) => !l.includes("-->") && !l.match(/^WEBVTT|^NOTE|^\d+$/))
+      .join(" ")
+      .replace(tagPat, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text) entries.push({ start, dur: 0, text });
+  }
+
+  return entries;
+}
+
+/**
+ * Fetch YouTube auto-generated captions via the InnerTube ANDROID client.
+ *
+ * Uses the ANDROID client which is less bot-restricted than the WEB client.
  * Returns subtitle entries (start/dur/text) or null if unavailable.
  */
 export async function downloadYouTubeCaptions(videoId: string): Promise<SubtitleEntry[] | null> {
   console.log(`  Fetching YouTube captions for ${videoId}...`);
   try {
-    const subs = await getSubtitles({ videoID: videoId, lang: "en" });
-    if (!subs || subs.length === 0) {
-      console.warn("  No captions returned");
+    const playerRes = await fetch(
+      `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": `com.google.android.youtube/${ANDROID_CLIENT_VERSION} (Linux; U; Android ${ANDROID_SDK}) gzip`,
+          "X-YouTube-Client-Name": "3",
+          "X-YouTube-Client-Version": ANDROID_CLIENT_VERSION,
+        },
+        body: JSON.stringify({
+          videoId,
+          context: {
+            client: {
+              clientName: "ANDROID",
+              clientVersion: ANDROID_CLIENT_VERSION,
+              androidSdkVersion: ANDROID_SDK,
+              hl: "en",
+              gl: "US",
+            },
+          },
+        }),
+      }
+    );
+
+    if (!playerRes.ok) {
+      console.warn(`  InnerTube player API returned ${playerRes.status}`);
       return null;
     }
-    console.log(`  Got ${subs.length} caption entries`);
-    return subs.map((s) => ({
-      start: parseFloat(s.start as unknown as string),
-      dur: parseFloat(s.dur as unknown as string),
-      text: s.text,
-    }));
+
+    const player = (await playerRes.json()) as Record<string, unknown>;
+    const tracks = (
+      (player?.captions as Record<string, unknown>)
+        ?.playerCaptionsTracklistRenderer as Record<string, unknown>
+    )?.captionTracks as Array<Record<string, unknown>> | undefined;
+
+    if (!tracks || tracks.length === 0) {
+      console.warn("  No caption tracks in player response");
+      return null;
+    }
+
+    // Prefer ASR (auto-generated) English track; fall back to any English track
+    const track =
+      tracks.find(
+        (t) =>
+          String(t.languageCode ?? "").startsWith("en") &&
+          String(t.kind ?? "") === "asr"
+      ) ??
+      tracks.find((t) => String(t.languageCode ?? "").startsWith("en")) ??
+      tracks[0];
+
+    if (!track?.baseUrl) {
+      console.warn("  No usable caption track found");
+      return null;
+    }
+
+    const vttUrl = `${track.baseUrl}&fmt=vtt`;
+    const vttRes = await fetch(vttUrl as string);
+    if (!vttRes.ok) {
+      console.warn(`  Caption VTT fetch failed (${vttRes.status})`);
+      return null;
+    }
+
+    const vttText = await vttRes.text();
+    if (!vttText.includes("WEBVTT")) {
+      console.warn("  Caption response is not valid VTT");
+      return null;
+    }
+
+    const entries = parseVttToEntries(vttText);
+    console.log(`  Got ${entries.length} caption entries`);
+    return entries.length > 0 ? entries : null;
   } catch (e) {
     console.warn(`  Caption fetch failed: ${(e as Error).message?.split("\n")[0]}`);
     return null;
