@@ -44,7 +44,7 @@ export async function findParliamentYouTubeVideo(
 
   const { stdout } = await execFileAsync(
     "yt-dlp",
-    [CHANNEL_URL, "--flat-playlist", "--dump-json", "--playlist-end", "30", "--no-playlist-info"],
+    [CHANNEL_URL, "--flat-playlist", "--dump-json", "--playlist-end", "30"],
     { timeout: 60_000 }
   );
 
