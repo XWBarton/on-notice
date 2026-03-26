@@ -38,11 +38,11 @@ export async function cutSegment(
   const duration = endSec - startSec;
   if (duration <= 0) throw new Error(`Invalid segment: ${startSec}→${endSec}`);
 
-  // -ss after -i: post-input seek decodes-and-discards rather than container-seeking.
-  // Required because yt-dlp HLS downloads retain original stream timestamps (non-zero-based).
+  // Pre-input -ss: fast container-level seek. The raw audio is a clean MP3 produced
+  // by the downloader (ffmpeg re-encode), so timestamps always start at 0.
   await execFileAsync("ffmpeg", [
-    "-i", sourcePath,
     "-ss", String(Math.max(0, startSec - BUFFER_SEC)),
+    "-i", sourcePath,
     "-t", String(duration + BUFFER_SEC * 2),
     "-acodec", "libmp3lame",
     "-ab", "64k",
