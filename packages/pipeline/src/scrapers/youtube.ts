@@ -5,8 +5,6 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import * as fs from "node:fs";
-import * as path from "node:path";
 
 const execFileAsync = promisify(execFile);
 
@@ -75,42 +73,59 @@ export async function findParliamentYouTubeVideo(
 
 /**
  * Download YouTube auto-generated captions as a VTT string.
- * yt-dlp appends the language code to the output filename (e.g. ID.en.vtt).
+ *
+ * Uses yt-dlp --dump-json to get the video metadata (including caption CDN
+ * URLs), then fetches the VTT directly. This avoids --write-auto-sub which
+ * can fail in environments without a JS runtime for YouTube's n-challenge.
  */
-export async function downloadYouTubeCaptions(
-  videoId: string,
-  outputDir: string
-): Promise<string | null> {
+export async function downloadYouTubeCaptions(videoId: string): Promise<string | null> {
   const url = `https://www.youtube.com/watch?v=${videoId}`;
-  const outputTemplate = path.join(outputDir, `yt-captions-${videoId}`);
 
+  let stdout: string;
   try {
-    await execFileAsync(
+    ({ stdout } = await execFileAsync(
       "yt-dlp",
-      [
-        url,
-        "--write-auto-sub",
-        "--sub-lang", "en-orig",
-        "--sub-format", "vtt",
-        "--skip-download",
-        "-o", outputTemplate,
-      ],
-      { timeout: 120_000 }
-    );
+      [url, "--dump-json", "--skip-download"],
+      { timeout: 60_000 }
+    ));
   } catch (e) {
-    // yt-dlp exits non-zero if no subs found but may still write a file
-    console.warn(`  yt-dlp captions warning: ${(e as Error).message?.split("\n")[0] ?? ""}`);
-  }
-
-  // yt-dlp may write *.en.vtt, *.en-orig.vtt, etc.
-  const vttFiles = fs
-    .readdirSync(outputDir)
-    .filter((f) => f.startsWith(`yt-captions-${videoId}`) && f.endsWith(".vtt"));
-
-  if (vttFiles.length === 0) {
-    console.warn("  No YouTube caption file written");
+    console.warn(`  yt-dlp info fetch failed: ${(e as Error).message ?? ""}`);
     return null;
   }
 
-  return fs.readFileSync(path.join(outputDir, vttFiles[0]), "utf-8");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let info: any;
+  try {
+    info = JSON.parse(stdout);
+  } catch {
+    console.warn("  yt-dlp output is not valid JSON");
+    return null;
+  }
+
+  // Prefer en-orig (original audio auto-captions); fall back to en
+  const caps =
+    (info?.automatic_captions?.["en-orig"] as Array<{ ext: string; url: string }> | undefined) ??
+    (info?.automatic_captions?.["en"] as Array<{ ext: string; url: string }> | undefined);
+
+  if (!caps) {
+    console.warn("  No English automatic captions found in video info");
+    return null;
+  }
+
+  const vttEntry = caps.find((c) => c.ext === "vtt");
+  if (!vttEntry?.url) {
+    console.warn("  No VTT entry in automatic captions");
+    return null;
+  }
+
+  console.log("  Downloading YouTube VTT captions directly...");
+  const res = await fetch(vttEntry.url);
+  if (!res.ok) {
+    console.warn(`  VTT fetch failed: ${res.status}`);
+    return null;
+  }
+
+  const vttContent = await res.text();
+  console.log(`  Downloaded ${Math.round(vttContent.length / 1024)}KB of captions`);
+  return vttContent;
 }

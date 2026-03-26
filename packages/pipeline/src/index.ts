@@ -358,7 +358,7 @@ async function run() {
               console.log("  No YouTube video found — skipping audio");
             } else {
 
-            const ytCaptionsVtt = await downloadYouTubeCaptions(ytVideo.videoId, workDir);
+            const ytCaptionsVtt = await downloadYouTubeCaptions(ytVideo.videoId);
             const qtDuration = qtOffsets.endSec - qtOffsets.startSec;
 
             // Detect QT window from captions and extract speaker-call transcript
