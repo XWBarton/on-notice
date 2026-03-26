@@ -20,9 +20,9 @@ import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
 import { summariseDivision } from "./ai/summarise-division";
 import { upsertDivisions } from "./db/upsert-divisions";
-import { findParlViewVideo, questionTimeOffsets } from "./scrapers/parlview";
+import { findParlViewVideo, questionTimeOffsets, timecodeToSeconds } from "./scrapers/parlview";
 import { findParliamentYouTubeVideo, downloadYouTubeCaptions } from "./scrapers/youtube";
-import { downloadYouTubeQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
+import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { uploadEpisode, uploadClip } from "./audio/uploader";
 import { buildQtTranscriptFromYouTubeCaptions } from "./audio/captions";
@@ -351,36 +351,21 @@ async function run() {
             console.log(`  ParlView segments (${parlviewVideo.segments.length}): ${parlviewVideo.segments.map(s => s.segmentTitle).join(", ")}`);
           console.log(`  Question Time: ${Math.round(qtOffsets.startSec)}s → ${Math.round(qtOffsets.endSec)}s`);
 
-            // 8c: Find YouTube video and download full-day captions
+            // 8c: Download QT audio from ParlView (reliable, no auth needed)
+            // qtOffsets are mediaSom-relative; add vttOffset to get fileSom-relative stream positions
+            const fileSomSec = parseInt(parlviewVideo.fileSom, 10) / 25;
+            const mediaSomSec = timecodeToSeconds(parlviewVideo.mediaSom);
+            const vttOffset = mediaSomSec - fileSomSec;
             const workDir = createAudioWorkDir(date, parliamentId);
-            const ytVideo = await findParliamentYouTubeVideo(date, parliamentId as "fed_hor" | "fed_sen");
-            if (!ytVideo) {
-              console.log("  No YouTube video found — skipping audio");
-            } else {
-
-            const ytCaptionsVtt = await downloadYouTubeCaptions(ytVideo.videoId);
-            const qtDuration = qtOffsets.endSec - qtOffsets.startSec;
-
-            // Detect QT window from captions and extract speaker-call transcript
-            const captionsResult = ytCaptionsVtt
-              ? buildQtTranscriptFromYouTubeCaptions(ytCaptionsVtt, qtDuration)
-              : null;
-
-            if (!captionsResult) {
-              console.log("  Could not build QT transcript from YouTube captions — skipping audio");
-            } else {
-
-            const { transcript: qtTranscript, qtStartInYt } = captionsResult;
-            const qtEndInYt = qtStartInYt + qtDuration;
-
-            // 8d: Download Question Time audio from YouTube using the detected QT window
-            const rawAudioPath = await downloadYouTubeQuestionTimeAudio(
-              ytVideo.videoId,
-              qtStartInYt,
-              qtEndInYt,
+            const rawAudioPath = await downloadQuestionTimeAudio(
+              parlviewVideo.id,
+              qtOffsets.startSec + vttOffset,
+              qtOffsets.endSec + vttOffset,
               workDir
             );
             console.log(`  Downloaded: ${rawAudioPath}`);
+
+            const qtDuration = qtOffsets.endSec - qtOffsets.startSec;
 
             // QT starts 30s into the downloaded file (the downloader adds a 30s pre-buffer)
             const qtAudioStart = 30;
@@ -394,8 +379,21 @@ async function run() {
               if (m.electorate) memberElectorateMap.set(m.id, m.electorate);
             }
 
+            // 8d: Get YouTube captions for QT transcript (full-day coverage, no 4-hour VTT limit)
+            const ytVideo = await findParliamentYouTubeVideo(date, parliamentId as "fed_hor" | "fed_sen");
+            const ytCaptionsVtt = ytVideo ? await downloadYouTubeCaptions(ytVideo.videoId) : null;
+            const captionsResult = ytCaptionsVtt
+              ? buildQtTranscriptFromYouTubeCaptions(ytCaptionsVtt, qtDuration)
+              : null;
+
+            if (!captionsResult) {
+              console.log("  No YouTube captions available — skipping question timestamp extraction");
+            }
+
+            const qtTranscript = captionsResult?.transcript ?? null;
+
             // Ask Sonnet for question timestamps from the YouTube caption transcript
-            const aiTimestamps = await extractTimestampsWithAI(
+            const aiTimestamps = qtTranscript ? await extractTimestampsWithAI(
               qtTranscript,
               realQuestionsForAudio.map((q) => ({
                 questionNumber: q.questionNumber!,
@@ -405,7 +403,7 @@ async function run() {
                 questionText: q.questionText ?? null,
               })),
               config.chamber === "lower" ? "house" : "senate"
-            ).catch((e) => { console.warn(`  AI timestamp extraction failed: ${e.message}`); return []; });
+            ).catch((e) => { console.warn(`  AI timestamp extraction failed: ${e.message}`); return []; }) : [];
 
             console.log(`  AI identified ${aiTimestamps.length}/${realQuestionsForAudio.length} question timestamps`);
             for (const t of aiTimestamps) {
@@ -519,8 +517,6 @@ async function run() {
 
             // Keep temp dir so the raw audio can be reused on the next run
             // (manually delete /tmp/on-notice-audio-* to force a fresh download)
-            } // end if (captionsResult)
-            } // end if (ytVideo)
           }
         }
       } catch (audioErr) {

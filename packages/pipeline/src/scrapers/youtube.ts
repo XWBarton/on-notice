@@ -71,61 +71,62 @@ export async function findParliamentYouTubeVideo(
   return null;
 }
 
+// YouTube InnerTube API — public key used by all YouTube clients
+const INNERTUBE_URL = "https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+
 /**
  * Download YouTube auto-generated captions as a VTT string.
  *
- * Uses yt-dlp --dump-json to get the video metadata (including caption CDN
- * URLs), then fetches the VTT directly. This avoids --write-auto-sub which
- * can fail in environments without a JS runtime for YouTube's n-challenge.
+ * Uses the YouTube InnerTube API (no authentication, no yt-dlp) to get the
+ * player response and caption track URLs, then fetches the VTT directly.
+ * This avoids the bot-detection that blocks yt-dlp --dump-json from CI.
  */
 export async function downloadYouTubeCaptions(videoId: string): Promise<string | null> {
-  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  console.log(`  Fetching YouTube player info for ${videoId} via InnerTube API...`);
 
-  let stdout: string;
-  try {
-    ({ stdout } = await execFileAsync(
-      "yt-dlp",
-      [url, "--dump-json", "--skip-download"],
-      { timeout: 60_000 }
-    ));
-  } catch (e) {
-    console.warn(`  yt-dlp info fetch failed: ${(e as Error).message ?? ""}`);
+  const playerRes = await fetch(INNERTUBE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      videoId,
+      context: {
+        client: { clientName: "ANDROID", clientVersion: "17.31.35", androidSdkVersion: 30 },
+      },
+    }),
+  });
+
+  if (!playerRes.ok) {
+    console.warn(`  InnerTube API error: ${playerRes.status}`);
     return null;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let info: any;
-  try {
-    info = JSON.parse(stdout);
-  } catch {
-    console.warn("  yt-dlp output is not valid JSON");
+  const player = await playerRes.json() as any;
+  const tracks: Array<{ languageCode: string; kind?: string; baseUrl: string }> =
+    player?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+
+  if (tracks.length === 0) {
+    console.warn("  No caption tracks in InnerTube response");
     return null;
   }
 
-  // Prefer en-orig (original audio auto-captions); fall back to en
-  const caps =
-    (info?.automatic_captions?.["en-orig"] as Array<{ ext: string; url: string }> | undefined) ??
-    (info?.automatic_captions?.["en"] as Array<{ ext: string; url: string }> | undefined);
+  // Prefer auto-generated English (kind=asr); fall back to any English track
+  const track =
+    tracks.find((t) => t.languageCode === "en" && t.kind === "asr") ??
+    tracks.find((t) => t.languageCode === "en");
 
-  if (!caps) {
-    console.warn("  No English automatic captions found in video info");
+  if (!track?.baseUrl) {
+    console.warn("  No English caption track found");
     return null;
   }
 
-  const vttEntry = caps.find((c) => c.ext === "vtt");
-  if (!vttEntry?.url) {
-    console.warn("  No VTT entry in automatic captions");
+  const vttRes = await fetch(`${track.baseUrl}&fmt=vtt`);
+  if (!vttRes.ok) {
+    console.warn(`  VTT fetch failed: ${vttRes.status}`);
     return null;
   }
 
-  console.log("  Downloading YouTube VTT captions directly...");
-  const res = await fetch(vttEntry.url);
-  if (!res.ok) {
-    console.warn(`  VTT fetch failed: ${res.status}`);
-    return null;
-  }
-
-  const vttContent = await res.text();
-  console.log(`  Downloaded ${Math.round(vttContent.length / 1024)}KB of captions`);
+  const vttContent = await vttRes.text();
+  console.log(`  Downloaded ${Math.round(vttContent.length / 1024)}KB of YouTube captions`);
   return vttContent;
 }
