@@ -20,11 +20,12 @@ import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
 import { summariseDivision } from "./ai/summarise-division";
 import { upsertDivisions } from "./db/upsert-divisions";
-import { findParlViewVideo, questionTimeOffsets, timecodeToSeconds } from "./scrapers/parlview";
-import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
+import { findParlViewVideo, questionTimeOffsets } from "./scrapers/parlview";
+import { findParliamentYouTubeVideo, downloadYouTubeCaptions } from "./scrapers/youtube";
+import { downloadYouTubeQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { uploadEpisode, uploadClip } from "./audio/uploader";
-import { buildQtTranscript } from "./audio/captions";
+import { buildQtTranscriptFromYouTubeCaptions } from "./audio/captions";
 import { extractTimestampsWithAI } from "./ai/timestamp-questions";
 import * as fs from "node:fs";
 
@@ -32,7 +33,7 @@ async function run() {
   const { values } = parseArgs({
     options: {
       parliament: { type: "string", default: "fed_hor" },
-      date: { type: "string", default: format(new Date(Date.now() - 864e5), "yyyy-MM-dd") },
+      date: { type: "string", default: new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date(Date.now() - 864e5)) },
       "skip-audio": { type: "boolean", default: false },
       "members-only": { type: "boolean", default: false },
     },
@@ -350,24 +351,40 @@ async function run() {
             console.log(`  ParlView segments (${parlviewVideo.segments.length}): ${parlviewVideo.segments.map(s => s.segmentTitle).join(", ")}`);
           console.log(`  Question Time: ${Math.round(qtOffsets.startSec)}s → ${Math.round(qtOffsets.endSec)}s`);
 
-            // 8c: Download Question Time audio
-            // qtOffsets are mediaSom-relative, but yt-dlp interprets section timestamps
-            // as fileSom-relative. Add vttOffset to get the correct stream positions.
-            const fileSomSec = parseInt(parlviewVideo.fileSom, 10) / 25;
-            const mediaSomSec = timecodeToSeconds(parlviewVideo.mediaSom);
-            const vttOffset = mediaSomSec - fileSomSec;
+            // 8c: Find YouTube video and download full-day captions
             const workDir = createAudioWorkDir(date, parliamentId);
-            const rawAudioPath = await downloadQuestionTimeAudio(
-              parlviewVideo.id,
-              qtOffsets.startSec + vttOffset,
-              qtOffsets.endSec + vttOffset,
+            const ytVideo = await findParliamentYouTubeVideo(date, parliamentId as "fed_hor" | "fed_sen");
+            if (!ytVideo) {
+              console.log("  No YouTube video found — skipping audio");
+            } else {
+
+            const ytCaptionsVtt = await downloadYouTubeCaptions(ytVideo.videoId, workDir);
+            const qtDuration = qtOffsets.endSec - qtOffsets.startSec;
+
+            // Detect QT window from captions and extract speaker-call transcript
+            const captionsResult = ytCaptionsVtt
+              ? buildQtTranscriptFromYouTubeCaptions(ytCaptionsVtt, qtDuration)
+              : null;
+
+            if (!captionsResult) {
+              console.log("  Could not build QT transcript from YouTube captions — skipping audio");
+            } else {
+
+            const { transcript: qtTranscript, qtStartInYt } = captionsResult;
+            const qtEndInYt = qtStartInYt + qtDuration;
+
+            // 8d: Download Question Time audio from YouTube using the detected QT window
+            const rawAudioPath = await downloadYouTubeQuestionTimeAudio(
+              ytVideo.videoId,
+              qtStartInYt,
+              qtEndInYt,
               workDir
             );
             console.log(`  Downloaded: ${rawAudioPath}`);
 
             // QT starts 30s into the downloaded file (the downloader adds a 30s pre-buffer)
             const qtAudioStart = 30;
-            const qtAudioEnd = qtAudioStart + (qtOffsets.endSec - qtOffsets.startSec);
+            const qtAudioEnd = qtAudioStart + qtDuration;
 
             const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
 
@@ -377,21 +394,18 @@ async function run() {
               if (m.electorate) memberElectorateMap.set(m.id, m.electorate);
             }
 
-            // Build condensed QT transcript and ask Sonnet for question timestamps
-            const qtTranscript = await buildQtTranscript(parlviewVideo, qtOffsets.startSec, qtOffsets.endSec);
-            const aiTimestamps = qtTranscript
-              ? await extractTimestampsWithAI(
-                  qtTranscript,
-                  realQuestionsForAudio.map((q) => ({
-                    questionNumber: q.questionNumber!,
-                    askerName: q.askerName ?? null,
-                    askerParty: q.askerParty ?? null,
-                    electorate: q.askerMemberId ? (memberElectorateMap.get(q.askerMemberId) ?? null) : null,
-                    questionText: q.questionText ?? null,
-                  })),
-                  config.chamber === "lower" ? "house" : "senate"
-                ).catch((e) => { console.warn(`  AI timestamp extraction failed: ${e.message}`); return []; })
-              : [];
+            // Ask Sonnet for question timestamps from the YouTube caption transcript
+            const aiTimestamps = await extractTimestampsWithAI(
+              qtTranscript,
+              realQuestionsForAudio.map((q) => ({
+                questionNumber: q.questionNumber!,
+                askerName: q.askerName ?? null,
+                askerParty: q.askerParty ?? null,
+                electorate: q.askerMemberId ? (memberElectorateMap.get(q.askerMemberId) ?? null) : null,
+                questionText: q.questionText ?? null,
+              })),
+              config.chamber === "lower" ? "house" : "senate"
+            ).catch((e) => { console.warn(`  AI timestamp extraction failed: ${e.message}`); return []; });
 
             console.log(`  AI identified ${aiTimestamps.length}/${realQuestionsForAudio.length} question timestamps`);
             for (const t of aiTimestamps) {
@@ -470,7 +484,7 @@ async function run() {
             const episodePath = `${workDir}/episode.mp3`;
             const { durationSec, clipPaths } = await buildEpisode(
               rawAudioPath,
-              0, // segments are already file-relative (silence detection output)
+              0, // startSec/endSec are already file-relative (0-based from downloaded MP3 start)
               segments,
               episodePath,
               workDir
@@ -505,6 +519,8 @@ async function run() {
 
             // Keep temp dir so the raw audio can be reused on the next run
             // (manually delete /tmp/on-notice-audio-* to force a fresh download)
+            } // end if (captionsResult)
+            } // end if (ytVideo)
           }
         }
       } catch (audioErr) {

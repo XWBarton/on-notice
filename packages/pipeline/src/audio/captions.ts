@@ -1,6 +1,12 @@
 /**
- * Downloads ParlView HLS subtitle (WebVTT) captions for the Question Time window
- * and builds a filtered transcript for AI timestamp extraction.
+ * Builds a filtered transcript for AI timestamp extraction from VTT captions.
+ *
+ * Two entry points:
+ *  - buildQtTranscript: ParlView HLS subtitle track (only covers ~4 hours from
+ *    recording start — works for Monday QT at noon, fails Tue–Thu at 2pm)
+ *  - buildQtTranscriptFromYouTubeCaptions: full-day YouTube auto-captions;
+ *    detects the QT window by searching for "Question Time" in the captions,
+ *    so it works regardless of when QT occurs.
  *
  * We only keep lines that contain Speaker announcement patterns
  * (call to member/senator/leader) plus time markers every 30s.
@@ -9,6 +15,9 @@
 
 import type { ParlViewVideo } from "../scrapers/parlview";
 import { timecodeToSeconds } from "../scrapers/parlview";
+
+/** Pattern that identifies the formal opening of Question Time in Hansard captions */
+const QT_OPEN_RE = /\bquestions?\s+(without\s+notice|to\s+ministers?|time)\b|\bquestion\s+time\b/i;
 
 interface VttEntry {
   sec: number; // VTT file-local seconds
@@ -224,4 +233,50 @@ export async function buildQtTranscript(
   console.log(`  Speaker-call transcript: ${lineCount} lines (from ${allEntries.length} raw entries)`);
 
   return transcript;
+}
+
+/**
+ * Build a QT transcript from full-day YouTube auto-captions.
+ *
+ * YouTube VTT timestamps are 0-based from the start of the video, so there is
+ * no offset calculation needed.  We locate the QT window by searching for the
+ * first "Question Time" / "Questions without notice" announcement, then use
+ * `qtDurationSec` (from ParlView segment metadata) to determine the QT end.
+ *
+ * Returns { transcript, qtStartInYt } so the caller can use qtStartInYt for
+ * time-section audio downloads, or null if QT cannot be located.
+ */
+export function buildQtTranscriptFromYouTubeCaptions(
+  vttContent: string,
+  qtDurationSec: number
+): { transcript: string; qtStartInYt: number } | null {
+  const allEntries = parseVtt(vttContent);
+  const condensed = condenseCaptions(allEntries);
+
+  // Find the first entry that announces Question Time
+  const qtOpenEntry = condensed.find((e) => QT_OPEN_RE.test(e.text));
+  if (!qtOpenEntry) {
+    console.warn("  YouTube captions: could not find 'Question Time' announcement — no QT window detected");
+    return null;
+  }
+
+  const qtStartInYt = qtOpenEntry.sec;
+  const qtEndInYt = qtStartInYt + qtDurationSec;
+
+  console.log(
+    `  YouTube captions: QT detected at T+${Math.round(qtStartInYt)}s (${new Date(qtStartInYt * 1000).toISOString().slice(11, 19)} from video start)`
+  );
+
+  // vttOffset=0 because YouTube VTT is already 0-based; qtStartSec/qtEndSec are in that same space
+  const transcript = buildSpeakerCallTranscript(condensed, 0, qtStartInYt, qtEndInYt);
+
+  const lineCount = transcript.split("\n").filter((l) => !l.startsWith("---")).length;
+  console.log(`  YouTube speaker-call transcript: ${lineCount} lines (from ${allEntries.length} raw entries)`);
+
+  if (lineCount === 0) {
+    console.warn("  YouTube captions: no speaker-call lines found in QT window");
+    return null;
+  }
+
+  return { transcript, qtStartInYt };
 }
