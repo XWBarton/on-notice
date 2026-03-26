@@ -20,7 +20,7 @@ import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
 import { summariseDivision } from "./ai/summarise-division";
 import { upsertDivisions } from "./db/upsert-divisions";
-import { findParlViewVideo, questionTimeOffsets, fetchParlViewCaptions } from "./scrapers/parlview";
+import { findParlViewVideo, questionTimeOffsets, fetchParlViewCaptions, fetchEventChunks, findChunkForTimecode, timecodeToSeconds } from "./scrapers/parlview";
 import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { uploadEpisode, uploadClip } from "./audio/uploader";
@@ -350,20 +350,52 @@ async function run() {
             console.log(`  ParlView segments (${parlviewVideo.segments.length}): ${parlviewVideo.segments.map(s => s.segmentTitle).join(", ")}`);
           console.log(`  Question Time: ${Math.round(qtOffsets.startSec)}s → ${Math.round(qtOffsets.endSec)}s`);
 
-            // 8c: Download Question Time audio directly from ParlView HLS
+            // 8c: Download Question Time audio from the correct ParlView HLS chunk.
+            // The recording is split into 3 chunks of ~4 hours each.
+            // QT at 2pm (Tue–Thu) is in chunk 2 (12:50pm–4:50pm); using chunk 1 would
+            // seek past EOF and produce silence or corrupt audio.
             const workDir = createAudioWorkDir(date, parliamentId);
+            const qtSegmentForAudio = parlviewVideo.segments.find((s) => /question time/i.test(s.segmentTitle));
+            const chunks = await fetchEventChunks(parlviewVideo.id);
+            const qtChunk = qtSegmentForAudio
+              ? findChunkForTimecode(chunks, qtSegmentForAudio.segmentIn)
+              : null;
+
+            // Chunk-relative seek: position of QT start within the chunk file (0-based)
+            const chunkStartSec = qtChunk ? timecodeToSeconds(qtChunk.fileSom) : 0;
+            const qtStartWallClock = qtSegmentForAudio
+              ? timecodeToSeconds(qtSegmentForAudio.segmentIn)
+              : timecodeToSeconds(parlviewVideo.mediaSom) + qtOffsets.startSec;
+            const qtEndWallClock = qtSegmentForAudio
+              ? timecodeToSeconds(qtSegmentForAudio.segmentOut)
+              : timecodeToSeconds(parlviewVideo.mediaSom) + qtOffsets.endSec;
+
+            // Positions within the chunk file (chunk-relative, used for ffmpeg seek)
+            const qtStartInChunk = qtStartWallClock - chunkStartSec;
+            const qtEndInChunk = qtEndWallClock - chunkStartSec;
+
+            const hlsUrl = qtChunk
+              ? qtChunk.proxyUrl
+              : `https://www.aph.gov.au/News_and_Events/Watch_Read_Listen/ParlView/video/${parlviewVideo.id}`;
+
+            if (qtChunk) {
+              console.log(`  Using chunk ${qtChunk.chunkId} (${qtChunk.fileSom}–${qtChunk.fileEom}), QT at ${Math.round(qtStartInChunk)}s in chunk`);
+            } else {
+              console.warn("  Could not find correct HLS chunk — falling back to ParlView page URL (seek may be wrong)");
+            }
+
             const rawAudioPath = await downloadQuestionTimeAudio(
-              parlviewVideo.id,
-              qtOffsets.startSec,
-              qtOffsets.endSec,
+              hlsUrl,
+              qtStartInChunk,
+              qtEndInChunk,
               workDir
             );
             console.log(`  Downloaded: ${rawAudioPath}`);
 
-            // The downloader buffers 30s before qtStartSec — track that offset so
-            // buildEpisode can convert recording-relative timestamps to file-relative.
-            const bufferedStart = Math.max(0, qtOffsets.startSec - 30);
-            const qtDuration = qtOffsets.endSec - qtOffsets.startSec;
+            // bufferedStart is the chunk-relative position where the downloaded file starts.
+            // buildEpisode converts segment positions to file-relative via: filePos = seg.startSec - bufferedStart
+            const bufferedStart = Math.max(0, qtStartInChunk - 30);
+            const qtDuration = qtEndInChunk - qtStartInChunk;
 
             const realQuestionsForAudio = classifiedQuestions.filter((q) => !q.isDorothyDixer && q.questionNumber);
 
@@ -452,9 +484,12 @@ async function run() {
               assignedStartsQt.set(qNums[i], prevQt + (nextQt - prevQt) * (posInGap / (gapSize + 1)));
             }
 
-            // Convert to recording-relative and build segments
+            // Convert to chunk-relative positions and build segments.
+            // qtStartInChunk is the 0-based position in the downloaded chunk file where QT starts.
+            // buildEpisode uses: filePos = seg.startSec - bufferedStart
+            // So seg.startSec = qtStartInChunk + secFromQtStart → filePos = secFromQtStart + 30 ✓
             const segments: QuestionSegment[] = [];
-            const qtStartRec = qtOffsets.startSec; // recording-relative QT start
+            const qtStartRec = qtStartInChunk; // chunk-relative QT start (base for segment positions)
 
             for (let i = 0; i < realQuestionsForAudio.length; i++) {
               const q = realQuestionsForAudio[i];

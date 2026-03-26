@@ -98,6 +98,53 @@ export async function fetchParlViewCaptions(videoId: string): Promise<ParlViewCa
   return Array.isArray(data) ? data : [];
 }
 
+export interface ParlViewChunk {
+  chunkId: number;
+  /** Direct HLS m3u8 URL for this chunk */
+  proxyUrl: string;
+  /** Wall-clock SMPTE timecode of chunk start e.g. "12:50:00:00" */
+  fileSom: string;
+  /** Wall-clock SMPTE timecode of chunk end e.g. "16:49:59:24" */
+  fileEom: string;
+}
+
+/**
+ * Fetch all HLS chunks for a ParlView video.
+ * The recording is split into 3 chunks of ~4 hours each.
+ * Returns chunks sorted by chunkId (ascending).
+ */
+export async function fetchEventChunks(videoId: string): Promise<ParlViewChunk[]> {
+  const res = await fetch(`https://vod.uat.aph.gov.au/api/videos/eventvideos/${videoId}`);
+  if (!res.ok) {
+    console.warn(`  fetchEventChunks: API returned ${res.status}`);
+    return [];
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = (await res.json()) as any[];
+  if (!Array.isArray(data)) return [];
+  const chunks: ParlViewChunk[] = data
+    .filter((c) => c.ProxyUrl && c.FileSom && c.FileEom)
+    .map((c) => ({
+      chunkId: Number(c.ChunkId ?? 0),
+      proxyUrl: String(c.ProxyUrl),
+      fileSom: String(c.FileSom),
+      fileEom: String(c.FileEom),
+    }));
+  chunks.sort((a, b) => a.chunkId - b.chunkId);
+  console.log(`  fetchEventChunks: ${chunks.length} chunks — ${chunks.map(c => `chunk${c.chunkId}(${c.fileSom}–${c.fileEom})`).join(", ")}`);
+  return chunks;
+}
+
+/**
+ * Find the chunk whose wall-clock window contains the given SMPTE timecode.
+ */
+export function findChunkForTimecode(chunks: ParlViewChunk[], timecode: string): ParlViewChunk | null {
+  const tc = timecodeToSeconds(timecode);
+  return chunks.find(
+    (c) => tc >= timecodeToSeconds(c.fileSom) && tc <= timecodeToSeconds(c.fileEom)
+  ) ?? null;
+}
+
 export async function findParlViewVideo(
   date: string,
   parliamentId: "fed_hor" | "fed_sen"

@@ -14,12 +14,11 @@ import * as os from "node:os";
 const execFileAsync = promisify(execFile);
 
 export async function downloadQuestionTimeAudio(
-  parlviewId: string,
+  hlsUrl: string,
   startSec: number,
   endSec: number,
   outputDir: string
 ): Promise<string> {
-  const pageUrl = `https://www.aph.gov.au/News_and_Events/Watch_Read_Listen/ParlView/video/${parlviewId}`;
   const outputPath = path.join(outputDir, `question-time-raw.mp3`);
 
   // Add 30s buffer on each side
@@ -41,17 +40,8 @@ export async function downloadQuestionTimeAudio(
     return outputPath;
   }
 
-  console.log(`  Getting stream URL for ${parlviewId}...`);
-  // Use yt-dlp only to resolve the stream URL — avoids fMP4 container issues
-  // from yt-dlp's own --download-sections HLS handling
-  const { stdout: urlOutput } = await execFileAsync("yt-dlp", [
-    pageUrl,
-    "--format", "bestaudio",
-    "--get-url",
-    "--no-playlist",
-  ], { timeout: 60_000 });
-
-  const streamUrl = urlOutput.trim().split("\n")[0];
+  // hlsUrl is the direct HLS m3u8 for the correct chunk — no yt-dlp needed
+  const streamUrl = hlsUrl;
   console.log(`  Downloading Question Time audio via ffmpeg: ${fmt(bufferedStart)} → ${fmt(bufferedEnd)}`);
 
   // ffmpeg handles HLS natively: pre-input -ss seeks within the m3u8 playlist (0-based),
