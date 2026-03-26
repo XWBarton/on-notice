@@ -37,7 +37,9 @@ export async function findParliamentYouTubeVideo(
   date: string,
   chamber: "fed_hor" | "fed_sen"
 ): Promise<YouTubeVideo | null> {
-  const uploadDate = date.replace(/-/g, "");
+  // Title format: "Question Time | DD/MM/YYYY" — upload_date is null in flat-playlist mode
+  const [yyyy, mm, dd] = date.split("-");
+  const titleDate = `${dd}/${mm}/${yyyy}`; // "25/03/2026"
   const keywords = CHAMBER_KEYWORDS[chamber];
 
   console.log(`  Searching YouTube for ${date} ${chamber}...`);
@@ -57,9 +59,10 @@ export async function findParliamentYouTubeVideo(
     if (!line.trim()) continue;
     try {
       const v = JSON.parse(line) as Record<string, unknown>;
-      if (v.upload_date === uploadDate && hasKeyword(v)) {
-        console.log(`  Found YouTube video: ${v.id} — ${v.title}`);
-        return { videoId: String(v.id), title: String(v.title ?? ""), uploadDate: String(v.upload_date) };
+      const titleStr = String(v.title ?? "");
+      if (titleStr.includes(titleDate) && hasKeyword(v)) {
+        console.log(`  Found YouTube video: ${v.id} — ${titleStr}`);
+        return { videoId: String(v.id), title: titleStr, uploadDate: date.replace(/-/g, "") };
       }
     } catch {
       // skip malformed lines
