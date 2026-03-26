@@ -5,6 +5,7 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { getSubtitles } from "youtube-caption-extractor";
 
 const execFileAsync = promisify(execFile);
 
@@ -71,74 +72,32 @@ export async function findParliamentYouTubeVideo(
   return null;
 }
 
+export interface SubtitleEntry {
+  start: number; // seconds from video start
+  dur: number;
+  text: string;
+}
+
 /**
- * Download YouTube auto-generated captions as a VTT string.
- *
- * YouTube embeds `captionTracks` JSON server-side in the page HTML — no
- * authentication required.  We fetch the public watch page with a browser
- * User-Agent, extract the ASR English track URL, and download the VTT.
+ * Fetch YouTube auto-generated captions via youtube-caption-extractor.
+ * Returns subtitle entries (start/dur/text) or null if unavailable.
  */
-export async function downloadYouTubeCaptions(videoId: string): Promise<string | null> {
-  console.log(`  Fetching YouTube page for caption URLs (${videoId})...`);
-
-  const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept-Language": "en-US,en;q=0.9",
-    },
-  });
-
-  if (!pageRes.ok) {
-    console.warn(`  YouTube page fetch failed: ${pageRes.status}`);
-    return null;
-  }
-
-  const html = await pageRes.text();
-
-  const idx = html.indexOf('"captionTracks":');
-  if (idx === -1) {
-    console.warn("  No captionTracks found in YouTube page HTML");
-    return null;
-  }
-
-  // Extract the JSON array that follows "captionTracks":
-  const arrStart = html.indexOf("[", idx);
-  let depth = 0;
-  let arrEnd = arrStart;
-  for (let i = arrStart; i < html.length; i++) {
-    if (html[i] === "[") depth++;
-    else if (html[i] === "]") {
-      depth--;
-      if (depth === 0) { arrEnd = i + 1; break; }
-    }
-  }
-
-  let tracks: Array<{ languageCode: string; kind?: string; baseUrl: string }>;
+export async function downloadYouTubeCaptions(videoId: string): Promise<SubtitleEntry[] | null> {
+  console.log(`  Fetching YouTube captions for ${videoId}...`);
   try {
-    tracks = JSON.parse(html.slice(arrStart, arrEnd));
-  } catch {
-    console.warn("  Failed to parse captionTracks JSON");
+    const subs = await getSubtitles({ videoID: videoId, lang: "en" });
+    if (!subs || subs.length === 0) {
+      console.warn("  No captions returned");
+      return null;
+    }
+    console.log(`  Got ${subs.length} caption entries`);
+    return subs.map((s) => ({
+      start: parseFloat(s.start as unknown as string),
+      dur: parseFloat(s.dur as unknown as string),
+      text: s.text,
+    }));
+  } catch (e) {
+    console.warn(`  Caption fetch failed: ${(e as Error).message?.split("\n")[0]}`);
     return null;
   }
-
-  // Prefer auto-generated English (kind=asr); fall back to any English track
-  const track =
-    tracks.find((t) => t.languageCode === "en" && t.kind === "asr") ??
-    tracks.find((t) => t.languageCode === "en");
-
-  if (!track?.baseUrl) {
-    console.warn("  No English auto-caption track found");
-    return null;
-  }
-
-  const vttRes = await fetch(`${track.baseUrl}&fmt=vtt`);
-  if (!vttRes.ok) {
-    console.warn(`  VTT fetch failed: ${vttRes.status}`);
-    return null;
-  }
-
-  const vttContent = await vttRes.text();
-  console.log(`  Downloaded ${Math.round(vttContent.length / 1024)}KB of YouTube captions`);
-  return vttContent;
 }

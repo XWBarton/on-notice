@@ -15,6 +15,7 @@
 
 import type { ParlViewVideo } from "../scrapers/parlview";
 import { timecodeToSeconds } from "../scrapers/parlview";
+import type { SubtitleEntry } from "../scrapers/youtube";
 
 /** Pattern that identifies the formal opening of Question Time in Hansard captions */
 const QT_OPEN_RE = /\bquestions?\s+(without\s+notice|to\s+ministers?|time)\b|\bquestion\s+time\b/i;
@@ -240,15 +241,14 @@ export async function buildQtTranscript(
  *
  * The @AUSParliamentLive YouTube videos are already cut to just Question Time
  * (they start at QT start, T=0), so no QT-window detection is needed.
- * VTT timestamps are 0-based from the start of the video.
  *
  * Returns the filtered transcript string, or null if no speaker-call lines found.
  */
 export function buildQtTranscriptFromYouTubeCaptions(
-  vttContent: string,
+  subtitles: SubtitleEntry[],
   qtDurationSec: number
 ): string | null {
-  const allEntries = parseVtt(vttContent);
+  const allEntries: VttEntry[] = subtitles.map((s) => ({ sec: s.start, text: s.text }));
   const condensed = condenseCaptions(allEntries);
 
   // vttOffset=0, qtStartSec=0 — video starts at QT start
