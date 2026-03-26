@@ -120,7 +120,8 @@ export async function fetchEventChunks(videoId: string): Promise<ParlViewChunk[]
     return [];
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data = (await res.json()) as any[];
+  const json = (await res.json()) as { Chunks?: any[] };
+  const data = json.Chunks;
   if (!Array.isArray(data)) return [];
   const chunks: ParlViewChunk[] = data
     .filter((c) => c.ProxyUrl && c.FileSom && c.FileEom)
