@@ -457,7 +457,7 @@ async function run() {
 
             // Senate captions lag behind speech more than the house, so we shift
             // AI timestamps earlier by an extra offset to compensate.
-            const chamberLeadSec = config.chamber === "upper" ? 5 : 0;
+            const chamberLeadSec = config.chamber === "upper" ? 10 : 0;
 
             // Assign start times for real questions only (interpolate gaps)
             const assignedStartsQt = new Map<number, number>(); // qNum → secFromQtStart
