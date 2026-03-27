@@ -25,20 +25,26 @@ interface VttEntry {
   text: string;
 }
 
-/** Lines matching Speaker announcements — "call to the member for X" */
+/** Lines matching Speaker announcements — "call to the member for X" or "call to the honourable for X" */
 const SPEAKER_CALL_RE =
-  /\b(?:give|gave|recall|I\s+call|now\s+call|next\s+call|the\s+call)\s+(?:the\s+)?(?:call\s+to\s+)?(?:the\s+)?(?:honourable\s+(?:the\s+)?)?(?:member\s+for|senator|leader\s+of\s+the\s+opposition|deputy\s+leader|manager\s+of\s+opposition)/i;
+  /\b(?:give|gave|recall|I\s+call|now\s+call|next\s+call|the\s+call)\s+(?:the\s+)?(?:call\s+to\s+)?(?:the\s+)?(?:honourable\s+(?:the\s+)?)?(?:member\s+for|senator|leader\s+of\s+the\s+opposition|deputy\s+leader|manager\s+of\s+opposition)|\bthe\s+call\s+to\s+the\s+honourable\s+for\s+[A-Z]/i;
 
-/** Broader catch — any line mentioning "member for" or leadership roles */
+/**
+ * Broader catch — lines that mention "call to the member for X" or leadership roles.
+ * Requires "call" to be nearby for "member for X" to avoid false positives from speech lines
+ * that incidentally reference a member (e.g. "the member for Hume has voted against...").
+ */
 const MEMBER_FOR_RE =
-  /\bmember\s+for\s+[A-Z]|\bsenator\s+(?:for\s+)?[A-Z]|\bleader\s+of\s+the\s+opposition\b|\bmanager\s+of\s+opposition\b|\bdeputy\s+(?:prime\s+minister|leader)\b/i;
+  /\bcall\b.{0,40}\bmember\s+for\s+[A-Z]|\bcall\b.{0,20}\bsenator\s+(?:for\s+)?[A-Z]|\bmember\s+for\s+[A-Z].{0,40}\bcall\b|\bcall\b.{0,30}\bhonourable\s+for\s+[A-Z]|\bleader\s+of\s+the\s+opposition\b|\bmanager\s+of\s+opposition\b|\bdeputy\s+(?:prime\s+minister|leader)\b/i;
 
 /**
  * Patterns that indicate a line is a response/speech, not a Speaker call.
  * e.g. "I thank the member for Calare" or "Senator Colbeck, I generally..."
+ * Rolling captions often prepend a sentence fragment: "Minister. I thank the member for Calare"
+ * so we match "I thank" both at line start and after a sentence boundary.
  */
 const RESPONSE_CONTEXT_RE =
-  /^I\s+(?:thank|acknowledge|welcome|appreciate|commend|congratulate|understand|would|want|think|also|note|refer|say|can)\b|^Senator\s+\w+,/i;
+  /(?:^|[.!?]\s+)I\s+(?:thank|acknowledge|welcome|appreciate|commend|congratulate|understand|would|want|think|also|note|refer|say|can)\b|^Senator\s+\w+,/i;
 
 function parseVtt(vttContent: string): VttEntry[] {
   const tsPat = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->/m;
@@ -123,9 +129,13 @@ function buildSpeakerCallTranscript(
     const inOpeningWindow = qtRelSec <= 300;
     const isSpeakerCall = SPEAKER_CALL_RE.test(e.text) ||
       (MEMBER_FOR_RE.test(e.text) && !RESPONSE_CONTEXT_RE.test(e.text));
-    if (inOpeningWindow || isSpeakerCall) {
+    // "My question is to the..." — always include as a fallback anchor for the AI
+    // when no Speaker call is present in captions (e.g. no call for this electorate)
+    const isQuestionOpener = /\bmy\s+question\s+is\s+to\s+the\b/i.test(e.text);
+    if (inOpeningWindow || isSpeakerCall || isQuestionOpener) {
       lines.push(`T+${qtRelSec}s: ${e.text}`);
       if (isSpeakerCall) linesAfterCall = MAX_AFTER;
+      if (isQuestionOpener) linesAfterCall = Math.max(linesAfterCall, 2);
     } else if (linesAfterCall > 0) {
       lines.push(`T+${qtRelSec}s: ${e.text}`);
       linesAfterCall--;
