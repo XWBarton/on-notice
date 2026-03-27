@@ -197,6 +197,7 @@ function StructuredTranscript({ entries }: { entries: TranscriptEntry[] }) {
 
 function AudioClipPlayer({ url }: { url: string }) {
   const [playing, setPlaying] = useState(false);
+  const [started, setStarted] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   function getAudio() {
@@ -216,6 +217,7 @@ function AudioClipPlayer({ url }: { url: string }) {
     } else {
       a.play();
       setPlaying(true);
+      setStarted(true);
     }
   }
 
@@ -253,25 +255,31 @@ function AudioClipPlayer({ url }: { url: string }) {
         )}
         {playing ? "Pause" : "Play Q&A"}
       </button>
-      <button
-        onClick={restart}
-        title="Restart"
-        className="inline-flex items-center justify-center w-6 h-6 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full transition-colors"
-      >
-        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-          <path d="M6 2a4 4 0 1 0 3.5 2.06L8.4 4.7A2.5 2.5 0 1 1 6 3.5V5l2.5-2L6 1v1z" />
-        </svg>
-      </button>
-      <button
-        onClick={skip30}
-        title="Skip 30s"
-        className="inline-flex items-center gap-0.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full px-2 py-1 transition-colors"
-      >
-        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-          <path d="M6 2a4 4 0 1 1-3.5 2.06L1.4 4.7A2.5 2.5 0 1 0 6 3.5V5L8.5 3 6 1v1z" />
-        </svg>
-        <span>30</span>
-      </button>
+      {started && (
+        <>
+          <button
+            onClick={restart}
+            title="Restart"
+            className="inline-flex items-center justify-center w-6 h-6 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 8a5 5 0 1 0 1.5-3.5" />
+              <polyline points="1,4 3,8 7,6" />
+            </svg>
+          </button>
+          <button
+            onClick={skip30}
+            title="Skip 30s forward"
+            className="inline-flex items-center gap-0.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full px-2 py-1 transition-colors"
+          >
+            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+              <path d="M9 6L5 3v6l4-3z" />
+              <rect x="9" y="3" width="1.5" height="6" rx="0.5" />
+            </svg>
+            <span>30</span>
+          </button>
+        </>
+      )}
     </div>
   );
 }
