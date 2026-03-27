@@ -1,6 +1,7 @@
 interface DivisionCardProps {
   division: {
     id: number;
+    division_number: number | null;
     subject: string;
     result: string | null;
     ayes_count: number | null;
@@ -32,6 +33,9 @@ export function DivisionCard({ division }: DivisionCardProps) {
         </span>
       </div>
       <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+        {division.division_number != null && (
+          <span className="text-xs text-gray-400">Division {division.division_number}</span>
+        )}
         {(division.ayes_count != null || division.noes_count != null) && (
           <>
             <span>
@@ -42,15 +46,10 @@ export function DivisionCard({ division }: DivisionCardProps) {
             </span>
           </>
         )}
-        {division.occurred_at && new Date(division.occurred_at).getUTCHours() !== 0 && (
-          <span className="ml-auto text-xs text-gray-400">
-            {new Date(division.occurred_at).toLocaleTimeString("en-AU", {
-              hour: "2-digit",
-              minute: "2-digit",
-              timeZone: "Australia/Sydney",
-            })}
-          </span>
-        )}
+        {division.occurred_at && (() => {
+          const t = new Date(division.occurred_at).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", timeZone: "Australia/Sydney" });
+          return t !== "12:00 am" ? <span className="ml-auto text-xs text-gray-400">{t}</span> : null;
+        })()}
       </div>
     </a>
   );
