@@ -138,6 +138,7 @@ async function run() {
           ? `${questionRow.speaker.first_name} ${questionRow.speaker.last_name}`
           : q.askerName,
         askerParty: questionRow?.speaker?.party ?? q.askerParty,
+        askerConstituency: questionRow?.speaker?.constituency ?? null,
         ministerName: (answerRows[0]?.speaker?.first_name && answerRows[0]?.speaker?.last_name)
           ? `${answerRows[0].speaker.first_name} ${answerRows[0].speaker.last_name}`
           : q.ministerName,
@@ -443,7 +444,8 @@ async function run() {
                 questionNumber: q.questionNumber!,
                 askerName: q.askerName ?? null,
                 askerParty: q.askerParty ?? null,
-                electorate: q.askerMemberId ? (memberElectorateMap.get(q.askerMemberId) ?? null) : null,
+                // Prefer constituency from OA speech row (always accurate) over member DB lookup
+                electorate: (q as any).askerConstituency ?? (q.askerMemberId ? (memberElectorateMap.get(q.askerMemberId) ?? null) : null),
                 questionText: q.questionText ?? null,
                 isDorothyDixer: q.isDorothyDixer,
               }));
