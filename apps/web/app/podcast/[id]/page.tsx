@@ -5,11 +5,16 @@ import { PartyBadge } from "@/components/Member/PartyBadge";
 
 export default async function EpisodePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ parliament?: string }>;
 }) {
   const { id: date } = await params;
+  const { parliament } = await searchParams;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) notFound();
+
+  const parliamentId = parliament === "fed_sen" ? "fed_sen" : "fed_hor";
 
   const supabase = createClient();
 
@@ -17,7 +22,7 @@ export default async function EpisodePage({
     .from("sitting_days")
     .select("id, sitting_date, audio_url, audio_duration_sec, daily_digests(lede, ai_summary)")
     .eq("sitting_date", date)
-    .eq("parliament_id", "fed_hor")
+    .eq("parliament_id", parliamentId)
     .maybeSingle();
 
   if (!day) notFound();
