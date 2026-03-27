@@ -199,39 +199,80 @@ function AudioClipPlayer({ url }: { url: string }) {
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  function toggle() {
+  function getAudio() {
     if (!audioRef.current) {
       const a = new Audio(url);
       audioRef.current = a;
       a.onended = () => setPlaying(false);
-      a.play();
-      setPlaying(true);
-    } else if (playing) {
-      audioRef.current.pause();
+    }
+    return audioRef.current;
+  }
+
+  function toggle() {
+    const a = getAudio();
+    if (playing) {
+      a.pause();
       setPlaying(false);
     } else {
-      audioRef.current.play();
+      a.play();
+      setPlaying(true);
+    }
+  }
+
+  function restart() {
+    const a = getAudio();
+    a.currentTime = 0;
+    a.play();
+    setPlaying(true);
+  }
+
+  function skip30() {
+    const a = getAudio();
+    a.currentTime = Math.min(a.currentTime + 30, a.duration || a.currentTime + 30);
+    if (!playing) {
+      a.play();
       setPlaying(true);
     }
   }
 
   return (
-    <button
-      onClick={toggle}
-      className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full px-3 py-1 transition-colors"
-    >
-      {playing ? (
+    <div className="inline-flex items-center gap-1">
+      <button
+        onClick={toggle}
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full px-3 py-1 transition-colors"
+      >
+        {playing ? (
+          <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+            <rect x="2" y="1" width="3" height="10" rx="0.5" />
+            <rect x="7" y="1" width="3" height="10" rx="0.5" />
+          </svg>
+        ) : (
+          <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+            <path d="M3 2l7 4-7 4V2z" />
+          </svg>
+        )}
+        {playing ? "Pause" : "Play Q&A"}
+      </button>
+      <button
+        onClick={restart}
+        title="Restart"
+        className="inline-flex items-center justify-center w-6 h-6 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full transition-colors"
+      >
         <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-          <rect x="2" y="1" width="3" height="10" rx="0.5" />
-          <rect x="7" y="1" width="3" height="10" rx="0.5" />
+          <path d="M6 2a4 4 0 1 0 3.5 2.06L8.4 4.7A2.5 2.5 0 1 1 6 3.5V5l2.5-2L6 1v1z" />
         </svg>
-      ) : (
+      </button>
+      <button
+        onClick={skip30}
+        title="Skip 30s"
+        className="inline-flex items-center gap-0.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full px-2 py-1 transition-colors"
+      >
         <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-          <path d="M3 2l7 4-7 4V2z" />
+          <path d="M6 2a4 4 0 1 1-3.5 2.06L1.4 4.7A2.5 2.5 0 1 0 6 3.5V5L8.5 3 6 1v1z" />
         </svg>
-      )}
-      {playing ? "Pause" : "Play Q&A"}
-    </button>
+        <span>30</span>
+      </button>
+    </div>
   );
 }
 
