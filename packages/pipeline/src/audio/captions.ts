@@ -33,6 +33,13 @@ const SPEAKER_CALL_RE =
 const MEMBER_FOR_RE =
   /\bmember\s+for\s+[A-Z]|\bsenator\s+(?:for\s+)?[A-Z]|\bleader\s+of\s+the\s+opposition\b|\bmanager\s+of\s+opposition\b|\bdeputy\s+(?:prime\s+minister|leader)\b/i;
 
+/**
+ * Patterns that indicate a line is a response/speech, not a Speaker call.
+ * e.g. "I thank the member for Calare" or "Senator Colbeck, I generally..."
+ */
+const RESPONSE_CONTEXT_RE =
+  /^I\s+(?:thank|acknowledge|welcome|appreciate|commend|congratulate|understand|would|want|think|also|note|refer|say|can)\b|^Senator\s+\w+,/i;
+
 function parseVtt(vttContent: string): VttEntry[] {
   const tsPat = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->/m;
   const tagPat = /<[^>]+>/g;
@@ -114,7 +121,8 @@ function buildSpeakerCallTranscript(
     // Include all lines in first 5 minutes — Q1's Speaker call is never captured
     // due to subtitle lag, so we need the full content to match Q1 by question text
     const inOpeningWindow = qtRelSec <= 300;
-    const isSpeakerCall = SPEAKER_CALL_RE.test(e.text) || MEMBER_FOR_RE.test(e.text);
+    const isSpeakerCall = SPEAKER_CALL_RE.test(e.text) ||
+      (MEMBER_FOR_RE.test(e.text) && !RESPONSE_CONTEXT_RE.test(e.text));
     if (inOpeningWindow || isSpeakerCall) {
       lines.push(`T+${qtRelSec}s: ${e.text}`);
       if (isSpeakerCall) linesAfterCall = MAX_AFTER;
