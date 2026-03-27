@@ -359,7 +359,10 @@ async function run() {
     );
 
     // ── Step 8: Audio pipeline ────────────────────────────────────────────────
-    if (!skipAudio) {
+    if (!skipAudio && classifiedQuestions.length === 0) {
+      console.log("Step 8: Skipping audio — no questions found (OA may not have indexed this day yet)");
+    }
+    if (!skipAudio && classifiedQuestions.length > 0) {
       console.log("Step 8: Audio pipeline...");
       try {
         // 8a: Find ParlView video ID for today.
