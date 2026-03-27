@@ -24,7 +24,7 @@ import { findParlViewVideo, questionTimeOffsets, fetchParlViewCaptions, fetchEve
 import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { uploadEpisode, uploadClip, uploadChapters } from "./audio/uploader";
-import { buildQtTranscriptFromParlViewCaptions } from "./audio/captions";
+import { buildQtTranscript, buildQtTranscriptFromParlViewCaptions } from "./audio/captions";
 import { extractTimestampsWithAI } from "./ai/timestamp-questions";
 import * as fs from "node:fs";
 
@@ -416,12 +416,32 @@ async function run() {
               if (m.electorate) memberElectorateMap.set(m.id, m.electorate);
             }
 
-            // 8d: Fetch captions from ParlView captions API (full-day wall-clock timecodes,
-            // covers QT at any time of day — no 4-hour HLS subtitle limit).
+            // 8d: Build caption transcript for AI timestamp extraction.
+            // Strategy: HLS VTT subtitles first (contain formal Speaker calls like
+            // "The call to the honourable member for X"), then fall back to ParlView
+            // closed captions (wall-clock SMPTE, covers full day but lacks formal calls).
             const qtSegment = parlviewVideo.segments.find((s) => /question time/i.test(s.segmentTitle));
             let qtTranscript: string | null = null;
 
-            if (qtSegment) {
+            // Try HLS VTT first — better speaker-call content
+            try {
+              console.log("  Trying HLS VTT captions...");
+              const vttTranscript = await buildQtTranscript(
+                parlviewVideo,
+                qtOffsets.startSec,
+                qtOffsets.endSec
+              );
+              if (vttTranscript) {
+                qtTranscript = vttTranscript;
+                console.log("  Using HLS VTT captions");
+              }
+            } catch (e) {
+              console.warn(`  HLS VTT captions failed: ${(e as Error).message}`);
+            }
+
+            // Fall back to ParlView closed captions API
+            if (!qtTranscript && qtSegment) {
+              console.log("  Falling back to ParlView closed captions...");
               const parlviewCaptions = await fetchParlViewCaptions(parlviewVideo.id);
               if (parlviewCaptions.length > 0) {
                 qtTranscript = buildQtTranscriptFromParlViewCaptions(
