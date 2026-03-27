@@ -64,11 +64,12 @@ Return ONLY a JSON array, no explanation: [{"questionNumber":1,"secFromQtStart":
     `Questions to find (all questions including Dorothy Dixers, in QT order):
 ${questionList}
 
-For each question, find the EARLIEST moment the Speaker calls that questioner.
-- Primary: search for the Speaker calling ${chamber === "senate" ? '"Senator [Name]"' : '"member for [electorate]"'}
+For each question, find the timestamp for the START of that questioner's speech (just before they say "My question is to the...").
+- Primary: find the Speaker's call for that questioner (${chamber === "senate" ? '"Senator [Name]"' : '"member for [electorate]"'}) — use the timestamp of that call
 - Also try: if no electorate is given, search for the questioner's last name in call patterns (e.g. "member for ... Smith" or "give the call to Smith")
-- Secondary: if no Speaker call found, search for the question's opening words (provided after "— starts:") anywhere in the transcript
-- Q1: the Speaker's call for Q1 is never captured (subtitle lag). Find Q1 by searching for its opening words in the full transcript
+- Secondary: if no Speaker call found, find where the questioner says "My question is to the Minister" or "My question is to the Prime Minister" — the timestamp should be 2–3 seconds BEFORE that phrase appears
+- Tertiary: if neither found, search for the question's opening words (provided after "— starts:") anywhere in the transcript
+- Q1: the Speaker's call for Q1 is often not captured (subtitle lag). Find Q1 by locating "My question is to" in the transcript
 - For unknown questions (no name/${chamber === "senate" ? "state" : "electorate"}): count Speaker calls in order after the last identified question
 ${chamber === "senate" ? "- Senate calls are often brief (e.g. \"Call to Senator Smith\"). Find the FIRST moment the senator is named or called — not when they start speaking." : ""}
 
