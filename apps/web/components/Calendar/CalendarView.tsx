@@ -32,21 +32,34 @@ function getLevel(info: HouseInfo | undefined, isScheduled: boolean): 0 | 1 | 2 
   return 0;
 }
 
-function getDotStyle(level: 0 | 1 | 2 | 3 | 4 | 5, color: string): React.CSSProperties | null {
+function ChamberChip({ level, color, label }: { level: 0 | 1 | 2 | 3 | 4 | 5; color: string; label: string }) {
   if (level === 0) return null;
-  if (level === 1) return { backgroundColor: "transparent", border: `1.5px solid ${color}40`, borderColor: color };
-  if (level === 2) return { backgroundColor: color + "40" };
-  if (level === 3) return { backgroundColor: color + "99" };
-  if (level === 4) return { backgroundColor: color };
-  // level 5: podcast — outer ring
-  return { backgroundColor: color, boxShadow: `0 0 0 1.5px white, 0 0 0 3px ${color}` };
+
+  let style: React.CSSProperties;
+  if (level === 1) {
+    style = { backgroundColor: "transparent", color, border: `1.5px solid ${color}`, opacity: 0.7 };
+  } else if (level === 2) {
+    style = { backgroundColor: color + "22", color };
+  } else if (level === 3) {
+    style = { backgroundColor: color + "44", color };
+  } else if (level === 4) {
+    style = { backgroundColor: color + "cc", color: "white" };
+  } else {
+    // podcast
+    style = { backgroundColor: color, color: "white", boxShadow: `0 0 0 2px white, 0 0 0 3.5px ${color}` };
+  }
+
+  return (
+    <span
+      className="text-[9px] font-bold leading-none px-[5px] py-[3px] rounded"
+      style={style}
+    >
+      {label}
+    </span>
+  );
 }
 
-function buildTitle(
-  dateStr: string,
-  horLevel: number,
-  senLevel: number,
-): string {
+function buildTitle(dateStr: string, horLevel: number, senLevel: number): string {
   const labels = ["", "Scheduled", "Processing", "Summaries ready", "Audio clips ready", "Podcast ready"];
   const parts: string[] = [format(new Date(dateStr + "T12:00:00"), "d MMMM yyyy")];
   if (horLevel > 0) parts.push(`House: ${labels[horLevel]}`);
@@ -63,7 +76,7 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
   const startPad = (getDay(monthStart) + 6) % 7;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Sitting Calendar</h1>
@@ -86,10 +99,13 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
         </div>
       </div>
 
-      {/* Day headers */}
-      <div className="grid grid-cols-7 text-center">
+      {/* Grid */}
+      <div className="grid grid-cols-7">
+        {/* Day headers */}
         {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d, i) => (
-          <div key={i} className={`text-xs font-medium pb-2 ${i >= 5 ? "text-gray-200" : "text-gray-400"}`}>{d}</div>
+          <div key={i} className={`text-xs font-medium text-center pb-3 ${i >= 5 ? "text-gray-200" : "text-gray-400"}`}>
+            {d}
+          </div>
         ))}
 
         {/* Padding */}
@@ -113,30 +129,30 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
           const senLevel = getLevel(senInfo, senScheduled);
 
           const hasAnyActivity = horLevel > 0 || senLevel > 0;
-          const hasConfirmedData = (horInfo?.confirmed || senInfo?.confirmed);
-
-          const horDotStyle = getDotStyle(horLevel, HOR_COLOR);
-          const senDotStyle = getDotStyle(senLevel, SEN_COLOR);
+          const hasConfirmedData = horInfo?.confirmed || senInfo?.confirmed;
 
           const inner = (
-            <div className="flex flex-col items-center py-1.5">
-              <span className={`text-sm leading-none ${
-                todayDate ? "font-bold text-gray-900"
-                : isWeekend ? "text-gray-200"
-                : hasConfirmedData ? "text-gray-800 font-medium"
-                : hasAnyActivity ? "text-gray-500"
-                : "text-gray-300"
-              }`}>
-                {format(day, "d")}
-              </span>
-              <div className="flex gap-1 mt-1.5 justify-center">
-                {horDotStyle && (
-                  <span className="w-2 h-2 rounded-full inline-block" style={horDotStyle} />
-                )}
-                {senDotStyle && (
-                  <span className="w-2 h-2 rounded-full inline-block" style={senDotStyle} />
-                )}
-              </div>
+            <div className="flex flex-col items-center py-2 min-h-[52px]">
+              {todayDate ? (
+                <span className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center text-xs font-bold">
+                  {format(day, "d")}
+                </span>
+              ) : (
+                <span className={`text-sm leading-none ${
+                  isWeekend ? "text-gray-200"
+                  : hasConfirmedData ? "text-gray-800 font-semibold"
+                  : hasAnyActivity ? "text-gray-500"
+                  : "text-gray-300"
+                }`}>
+                  {format(day, "d")}
+                </span>
+              )}
+              {hasAnyActivity && (
+                <div className="flex gap-1 mt-2 justify-center">
+                  <ChamberChip level={horLevel} color={HOR_COLOR} label="H" />
+                  <ChamberChip level={senLevel} color={SEN_COLOR} label="S" />
+                </div>
+              )}
             </div>
           );
 
@@ -145,7 +161,7 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
               <a
                 key={dateStr}
                 href={`/${dateStr}`}
-                className={`rounded-lg hover:bg-gray-50 transition-colors ${todayDate ? "ring-2 ring-gray-300 bg-gray-50" : ""}`}
+                className="rounded-lg hover:bg-gray-50 transition-colors text-center"
                 title={buildTitle(dateStr, horLevel, senLevel)}
               >
                 {inner}
@@ -154,7 +170,7 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
           }
 
           return (
-            <div key={dateStr} className={`rounded-lg ${todayDate ? "ring-2 ring-gray-300 bg-gray-50" : ""}`}>
+            <div key={dateStr} className="rounded-lg text-center">
               {inner}
             </div>
           );
@@ -162,53 +178,36 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
       </div>
 
       {/* Legend */}
-      <div className="pt-2 border-t border-gray-100 space-y-3">
-        {/* Chambers */}
+      <div className="pt-3 border-t border-gray-100 space-y-3">
         <div className="flex gap-5 text-xs text-gray-500">
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#006945] inline-block" />
+            <ChamberChip level={4} color={HOR_COLOR} label="H" />
             House of Representatives
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#C1121F] inline-block" />
+            <ChamberChip level={4} color={SEN_COLOR} label="S" />
             Senate
           </span>
         </div>
-        {/* Status progression */}
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-400">
+        <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-gray-400 items-center">
           <span className="flex items-center gap-1.5">
-            <span className="flex gap-0.5">
-              <span className="w-2 h-2 rounded-full inline-block" style={{ border: "1.5px solid #006945" }} />
-              <span className="w-2 h-2 rounded-full inline-block" style={{ border: "1.5px solid #C1121F" }} />
-            </span>
+            <ChamberChip level={1} color={HOR_COLOR} label="H" />
             Scheduled
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="flex gap-0.5">
-              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: "#00694540" }} />
-              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: "#C1121F40" }} />
-            </span>
+            <ChamberChip level={2} color={HOR_COLOR} label="H" />
             Processing
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="flex gap-0.5">
-              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: "#00694599" }} />
-              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: "#C1121F99" }} />
-            </span>
+            <ChamberChip level={3} color={HOR_COLOR} label="H" />
             Summaries
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="flex gap-0.5">
-              <span className="w-2 h-2 rounded-full inline-block bg-[#006945]" />
-              <span className="w-2 h-2 rounded-full inline-block bg-[#C1121F]" />
-            </span>
+            <ChamberChip level={4} color={HOR_COLOR} label="H" />
             Audio clips
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="flex gap-0.5">
-              <span className="w-2 h-2 rounded-full inline-block bg-[#006945]" style={{ boxShadow: "0 0 0 1.5px white, 0 0 0 3px #006945" }} />
-              <span className="w-2 h-2 rounded-full inline-block bg-[#C1121F]" style={{ boxShadow: "0 0 0 1.5px white, 0 0 0 3px #C1121F" }} />
-            </span>
+            <ChamberChip level={5} color={HOR_COLOR} label="H" />
             Podcast
           </span>
         </div>
