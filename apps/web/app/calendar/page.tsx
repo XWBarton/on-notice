@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase";
-import { CalendarView } from "@/components/Calendar/CalendarView";
+import { CalendarView, type HouseInfo } from "@/components/Calendar/CalendarView";
 
 export const revalidate = 3600;
 
@@ -85,27 +85,39 @@ export const SCHEDULED_SITTING_DATES: Record<string, ("fed_hor" | "fed_sen")[]> 
 export default async function CalendarPage() {
   const supabase = createClient();
 
-  const { data: sittingDays } = await supabase
-    .from("sitting_days")
-    .select("sitting_date, parliament_id, pipeline_status")
-    .eq("pipeline_status", "complete");
+  type SittingDayRow = { id: number; sitting_date: string; parliament_id: string; pipeline_status: string; audio_url: string | null };
+  type AudioClipRow = { sitting_day_id: number };
 
-  // Build lookup: date → set of parliament_ids with data
-  const dataMap: Record<string, Set<string>> = {};
+  const [{ data: sittingDays }, { data: audioClipRows }] = await Promise.all([
+    supabase
+      .from("sitting_days")
+      .select("id, sitting_date, parliament_id, pipeline_status, audio_url") as unknown as Promise<{ data: SittingDayRow[] | null }>,
+    supabase
+      .from("questions")
+      .select("sitting_day_id")
+      .not("audio_clip_url", "is", null)
+      .limit(5000) as unknown as Promise<{ data: AudioClipRow[] | null }>,
+  ]);
+
+  const sittingDaysWithAudioClips = new Set(
+    audioClipRows?.map((r) => r.sitting_day_id) ?? []
+  );
+
+  // Build lookup: date → { parliamentId → HouseInfo }
+  const dataMap: Record<string, Record<string, HouseInfo>> = {};
   for (const day of sittingDays ?? []) {
-    if (!dataMap[day.sitting_date]) dataMap[day.sitting_date] = new Set();
-    dataMap[day.sitting_date].add(day.parliament_id);
-  }
-
-  // Serialise for client component
-  const dataMapSerialisable: Record<string, string[]> = {};
-  for (const [date, set] of Object.entries(dataMap)) {
-    dataMapSerialisable[date] = Array.from(set);
+    if (!dataMap[day.sitting_date]) dataMap[day.sitting_date] = {};
+    dataMap[day.sitting_date][day.parliament_id] = {
+      confirmed: true,
+      textComplete: day.pipeline_status === "complete",
+      hasAudioClips: sittingDaysWithAudioClips.has(day.id),
+      hasPodcast: !!day.audio_url,
+    };
   }
 
   return (
     <CalendarView
-      dataMap={dataMapSerialisable}
+      dataMap={dataMap}
       scheduledDates={SCHEDULED_SITTING_DATES}
     />
   );
