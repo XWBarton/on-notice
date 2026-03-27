@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Verify Ko-fi webhook token
-  const token = process.env.KOFI_WEBHOOK_TOKEN;
+  const token = process.env.KOFI_WEBHOOK_TOKEN?.trim();
   if (token && data.verification_token !== token) {
     console.error("[kofi] Token mismatch — got:", data.verification_token);
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
