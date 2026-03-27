@@ -6,7 +6,6 @@
  * that renders video IDs client-side only.
  */
 
-import puppeteer from "puppeteer";
 
 export interface ParlViewVideo {
   id: string;
@@ -151,130 +150,84 @@ export async function findParlViewVideo(
   parliamentId: "fed_hor" | "fed_sen"
 ): Promise<ParlViewVideo | null> {
   const chamberNames = CHAMBER_NAMES[parliamentId];
-  const ddmmyyyy = date.split("-").reverse().join("/"); // 2026-03-23 → 23/03/2026
+  const ddmmyyyy = date.split("-").reverse().join("/"); // 2026-03-24 → 24/03/2026
+  const searchString = parliamentId === "fed_hor" ? "House of Representatives Chamber" : "Senate Chamber";
 
-  console.log(`  Launching Puppeteer to find ParlView video for ${date} (${parliamentId})...`);
-
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  // vodapi requires ISO datetime format and a Referer from parlview.aph.gov.au
+  const params = new URLSearchParams({
+    pageSize: "20",
+    page: "0",
+    doSearchCaptions: "false",
+    withClosedCaptionData: "false",
+    searchString,
+    captionSearchString: "",
+    fromDate: `${date}T00:00:00`,
+    toDate: `${date}T23:59:59`,
   });
+  const searchUrl = `https://vodapi.aph.gov.au/api/search?${params}`;
+  console.log(`  Searching ParlView for ${date} (${parliamentId})...`);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let json: any;
   try {
-    const page = await browser.newPage();
-
-    // Intercept API responses from vodapi
-    const videos: ParlViewVideo[] = [];
-
-    page.on("response", async (response) => {
-      const url = response.url();
-      if (!url.includes("vodapi.aph.gov.au")) return;
-      console.log(`  [ParlView] vodapi call: ${url}`);
-
-      try {
-        const json = await response.json();
-
-        // Search results response
-        if (json?.searchResults?.videos) {
-          const allTitles = json.searchResults.videos.map((v: Record<string, string>) => v.title).join(", ");
-          console.log(`  [ParlView] search returned ${json.searchResults.videos.length} videos (titles: ${allTitles || "none"})`);
-          for (const v of json.searchResults.videos) {
-            if (
-              v.title === ddmmyyyy &&
-              chamberNames.some((n) => v.parlViewTitle?.includes(n) || v.eventSubGroup?.includes(n))
-            ) {
-              videos.push({
-                id: v.parlViewId ?? v.titleId,
-                title: v.parlViewTitle ?? v.title,
-                chamber: v.eventSubGroup ?? "",
-                recordingFrom: v.recordingFrom ?? "",
-                mediaSom: v.mediaSom ?? "",
-                fileSom: v.files?.file?.fileSom ?? v.fileSom ?? "",
-                hlsUrl: v.files?.file?.url ?? "",
-                segments: Array.isArray(v.segments) ? v.segments : [],
-              });
-            }
-          }
-        }
-
-        // Individual video detail response
-        if (json?.videoDetails?.title === ddmmyyyy) {
-          const v = json.videoDetails;
-          if (chamberNames.some((n) => v.parlViewTitle?.includes(n) || v.eventSubGroup?.includes(n))) {
-            videos.push({
-              id: v.parlViewId ?? v.titleId,
-              title: v.parlViewTitle ?? v.title,
-              chamber: v.eventSubGroup ?? "",
-              recordingFrom: v.recordingFrom ?? "",
-              mediaSom: v.mediaSom ?? "",
-              fileSom: v.files?.file?.fileSom ?? v.fileSom ?? "",
-              hlsUrl: v.files?.file?.url ?? "",
-              segments: Array.isArray(v.segments) ? v.segments : [],
-            });
-          }
-        }
-      } catch {
-        // Not JSON — ignore
-      }
-    });
-
-    // Build the search URL. Try YYYY-MM-DD first (standard), then DD/MM/YYYY as fallback.
-    // ParlView's React app reads these params; the exact format it expects is unclear,
-    // so we log the URL and rely on the debug output to confirm.
-    const chamber = parliamentId === "fed_hor" ? "House+of+Representatives" : "Senate";
-    const searchUrl = `https://parlview.aph.gov.au/parlviewSearch.php?action=search&dropdown=custom&date_start=${date}&date_end=${date}&query=${chamber}+Chamber&order=date&direction=DESC&itemsPerPage=20&page=1`;
-    console.log(`  [ParlView] navigating to: ${searchUrl}`);
-
-    // Wait explicitly for a vodapi response rather than a fixed timeout
-    const vodapiResponsePromise = page.waitForResponse(
-      (r) => r.url().includes("vodapi.aph.gov.au"),
-      { timeout: 30000 }
-    ).catch(() => {
-      console.warn("  [ParlView] no vodapi response intercepted within 30s");
-    });
-
-    await page.goto(searchUrl, { waitUntil: "networkidle2", timeout: 60000 });
-    await vodapiResponsePromise;
-    // Small buffer for the response handler's async json() call to complete
-    await new Promise((r) => setTimeout(r, 500));
-
-    if (videos.length > 0) {
-      // Prefer the one with segments (Question Time info)
-      const withSegments = videos.find((v) => v.segments.length > 0);
-      return withSegments ?? videos[0];
+    const res = await fetch(searchUrl, { headers: { Referer: "https://parlview.aph.gov.au/" } });
+    if (!res.ok) {
+      console.warn(`  vodapi search returned ${res.status}`);
+      return null;
     }
+    json = await res.json();
+  } catch (e) {
+    console.warn(`  vodapi search failed: ${e}`);
+    return null;
+  }
 
-    // Fallback: extract video IDs from page HTML via regex on the page content
-    const pageContent = await page.content();
-    const idMatches = [...pageContent.matchAll(/(?:video\/|videoID=)(\d{6,7})/g)];
-    const videoLinks = [...new Set(idMatches.map((m) => m[1]))];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const videos: any[] = json?.searchResults?.videos ?? [];
+  console.log(`  vodapi returned ${videos.length} video(s)`);
 
-    for (const videoId of videoLinks.slice(0, 5)) {
-      const res = await fetch(`https://vodapi.aph.gov.au/api/search/parlview/${videoId}`);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const json = await res.json() as any;
-      const v = json?.videoDetails as Record<string, string> | null;
-      if (
-        v &&
-        v.title === ddmmyyyy &&
-        chamberNames.some((n) => (v.parlViewTitle ?? "").includes(n) || (v.eventSubGroup ?? "").includes(n))
-      ) {
-        return {
-          id: v.parlViewId ?? v.titleId,
-          title: v.parlViewTitle ?? v.title,
-          chamber: v.eventSubGroup ?? "",
-          recordingFrom: v.recordingFrom ?? "",
-          mediaSom: v.mediaSom ?? "",
-          fileSom: (v.files as unknown as Record<string, Record<string, string>> | undefined)?.file?.fileSom ?? "",
-          hlsUrl: (v.files as unknown as Record<string, Record<string, string>> | undefined)?.file?.url ?? "",
-          segments: Array.isArray(json.videoDetails.segments) ? json.videoDetails.segments : [],
-        };
-      }
-    }
+  const match = videos.find((v) =>
+    v.title === ddmmyyyy &&
+    chamberNames.some((n: string) => v.parlViewTitle?.includes(n) || v.eventSubGroup?.includes(n))
+  );
 
+  if (!match) {
     console.warn(`  No ParlView video found for ${date} (${parliamentId})`);
     return null;
-  } finally {
-    await browser.close();
   }
+
+  const video: ParlViewVideo = {
+    id: match.parlViewId ?? match.titleId,
+    title: match.parlViewTitle ?? match.title,
+    chamber: match.eventSubGroup ?? "",
+    recordingFrom: match.recordingFrom ?? "",
+    mediaSom: match.mediaSom ?? "",
+    fileSom: match.files?.file?.fileSom ?? match.fileSom ?? "",
+    hlsUrl: match.files?.file?.url ?? "",
+    segments: Array.isArray(match.segments) ? match.segments : [],
+  };
+
+  // If the search result didn't include segments, fetch the full detail record
+  if (video.segments.length === 0) {
+    try {
+      const detailRes = await fetch(`https://vodapi.aph.gov.au/api/search/parlview/${video.id}`, {
+        headers: { Referer: "https://parlview.aph.gov.au/" },
+      });
+      if (detailRes.ok) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const detail = await detailRes.json() as any;
+        const v = detail?.videoDetails;
+        if (v) {
+          video.segments = Array.isArray(v.segments) ? v.segments : [];
+          video.fileSom = v.files?.file?.fileSom ?? v.fileSom ?? video.fileSom;
+          video.hlsUrl = v.files?.file?.url ?? video.hlsUrl;
+          video.mediaSom = v.mediaSom ?? video.mediaSom;
+        }
+      }
+    } catch {
+      // segments are optional — continue without them
+    }
+  }
+
+  console.log(`  Found: ${video.id} "${video.title}" (${video.segments.length} segments)`);
+  return video;
 }
