@@ -22,9 +22,8 @@ export async function Footer() {
     <footer className="mt-16">
       <SupporterBar totalMonthly={totalMonthly} supporterCount={supporterCount} />
       <div className="border-t border-gray-100 bg-white">
-        <div className="mx-auto max-w-3xl px-4 py-4 text-sm text-gray-500 flex justify-between">
+        <div className="mx-auto max-w-3xl px-4 py-4 text-sm text-gray-500">
           <span>On Notice — Australian Parliament Feed</span>
-          <a href="/podcast/feed.xml" className="hover:text-gray-700">RSS Feed</a>
         </div>
       </div>
     </footer>
