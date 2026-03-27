@@ -138,7 +138,7 @@ async function run() {
           ? `${questionRow.speaker.first_name} ${questionRow.speaker.last_name}`
           : q.askerName,
         askerParty: questionRow?.speaker?.party ?? q.askerParty,
-        ministerName: answerRows[0]?.speaker
+        ministerName: (answerRows[0]?.speaker?.first_name && answerRows[0]?.speaker?.last_name)
           ? `${answerRows[0].speaker.first_name} ${answerRows[0].speaker.last_name}`
           : q.ministerName,
         ministerParty: answerRows[0]?.speaker?.party ?? q.ministerParty,

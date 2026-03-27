@@ -67,9 +67,10 @@ ${questionList}
 For each question, find the timestamp for the START of that questioner's speech (just before they say "My question is to the...").
 - Primary: find the Speaker's call for that questioner (${chamber === "senate" ? '"Senator [Name]"' : '"member for [electorate]"'}) — use the timestamp of that call
 - Also try: if no electorate is given, search for the questioner's last name in call patterns (e.g. "member for ... Smith" or "give the call to Smith")
-- Secondary: if no Speaker call found, find where the questioner says "My question is to the Minister" or "My question is to the Prime Minister" — the timestamp should be 2–3 seconds BEFORE that phrase appears
-- Tertiary: if neither found, search for the question's opening words (provided after "— starts:") anywhere in the transcript
-- Q1: the Speaker's call for Q1 is often not captured (subtitle lag). Find Q1 by locating "My question is to" in the transcript
+- Secondary: if no Speaker call found, find the FIRST occurrence of "My question is to the Minister" or "My question is to the Prime Minister" AFTER the previous question's timestamp — use 2–3 seconds before that phrase
+- Tertiary: if neither found, search for the question's opening words (provided after "— starts:") — use the FIRST occurrence after the previous question's timestamp, NOT any later re-occurrence during the minister's response
+- Q1: the Speaker's call for Q1 is often not captured (subtitle lag). Find Q1 by locating the first "My question is to" in the transcript
+- IMPORTANT: ministers sometimes paraphrase questions in their response (e.g. "I thank the member for Calare for their question about...") — do NOT use timestamps from within a minister's response, only from the questioner's own speech
 - For unknown questions (no name/${chamber === "senate" ? "state" : "electorate"}): count Speaker calls in order after the last identified question
 ${chamber === "senate" ? "- Senate calls are often brief (e.g. \"Call to Senator Smith\"). Find the FIRST moment the senator is named or called — not when they start speaking." : ""}
 
