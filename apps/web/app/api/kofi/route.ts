@@ -53,15 +53,16 @@ export async function POST(req: NextRequest) {
   // Recompute aggregate from all stored transactions
   const { data: all, error: fetchError } = await supabase
     .from("kofi_transactions")
-    .select("from_name, amount, currency, type, is_first_subscription_payment");
+    .select("from_name, amount, currency, created_at");
   if (fetchError) console.error("[kofi] Fetch transactions failed:", fetchError.message);
 
   if (all) {
-    // supporter_count = distinct donors by name
+    // supporter_count = distinct donors by name (all time)
     const supporterCount = new Set(all.map((r) => r.from_name).filter(Boolean)).size;
-    // total = one-time donations + first subscription payments, in AUD
+    // total = all AUD transactions received this calendar month
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
     const totalMonthly = all
-      .filter((r) => r.currency === "AUD" && (r.type === "Donation" || r.is_first_subscription_payment))
+      .filter((r) => r.currency === "AUD" && r.created_at >= startOfMonth)
       .reduce((sum, r) => sum + Number(r.amount), 0);
 
     console.log("[kofi] Updating supporters — count:", supporterCount, "monthly:", totalMonthly);
