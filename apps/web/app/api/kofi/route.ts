@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  console.log("[kofi] env check — url:", process.env.NEXT_PUBLIC_SUPABASE_URL ? "set" : "MISSING", "| key:", process.env.SUPABASE_SERVICE_ROLE_KEY ? "set" : "MISSING");
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
