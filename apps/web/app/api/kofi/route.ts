@@ -18,11 +18,13 @@ export async function POST(req: NextRequest) {
   // Verify Ko-fi webhook token
   const token = process.env.KOFI_WEBHOOK_TOKEN;
   if (token && data.verification_token !== token) {
+    console.error("[kofi] Token mismatch — got:", data.verification_token);
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   // Only handle Donation and Subscription events
   const type = String(data.type ?? "");
+  console.log("[kofi] Event type:", type, "| transaction:", data.kofi_transaction_id);
   if (!["Donation", "Subscription"].includes(type)) {
     return NextResponse.json({ ok: true });
   }
@@ -33,7 +35,7 @@ export async function POST(req: NextRequest) {
   );
 
   // Insert transaction — ignore duplicates (Ko-fi may retry)
-  await supabase.from("kofi_transactions").upsert(
+  const { error: upsertError } = await supabase.from("kofi_transactions").upsert(
     {
       kofi_transaction_id: String(data.kofi_transaction_id ?? ""),
       from_name: data.from_name ? String(data.from_name) : null,
@@ -46,11 +48,13 @@ export async function POST(req: NextRequest) {
     },
     { onConflict: "kofi_transaction_id", ignoreDuplicates: true }
   );
+  if (upsertError) console.error("[kofi] Transaction upsert failed:", upsertError.message);
 
   // Recompute aggregate from all stored transactions
-  const { data: all } = await supabase
+  const { data: all, error: fetchError } = await supabase
     .from("kofi_transactions")
     .select("from_name, amount, currency, is_first_subscription_payment");
+  if (fetchError) console.error("[kofi] Fetch transactions failed:", fetchError.message);
 
   if (all) {
     // supporter_count = distinct donors by name
@@ -60,10 +64,12 @@ export async function POST(req: NextRequest) {
       .filter((r) => r.is_first_subscription_payment && r.currency === "AUD")
       .reduce((sum, r) => sum + Number(r.amount), 0);
 
-    await supabase
+    console.log("[kofi] Updating supporters — count:", supporterCount, "monthly:", totalMonthly);
+    const { error: updateError } = await supabase
       .from("supporters")
       .update({ supporter_count: supporterCount, total_monthly_aud: totalMonthly, updated_at: new Date().toISOString() })
       .eq("id", 1);
+    if (updateError) console.error("[kofi] Supporters update failed:", updateError.message);
   }
 
   return NextResponse.json({ ok: true });
