@@ -21,7 +21,7 @@ export async function upsertDivisions(
     const timeEntry = divisionTimes.find((t) => t.divisionNumber === div.number);
     const occurredAt = timeEntry
       ? `${div.date}T${timeEntry.htime}+11:00`
-      : `${div.date}T00:00:00Z`;
+      : null;
 
     const divisionRow = {
       sitting_day_id: sittingDayId,
