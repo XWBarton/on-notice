@@ -29,19 +29,17 @@ interface VttEntry {
 const SPEAKER_CALL_RE =
   /\b(?:give|gave|recall|I\s+call|now\s+call|next\s+call|the\s+call)\s+(?:the\s+)?(?:call\s+to\s+)?(?:the\s+)?(?:honourable\s+(?:the\s+)?)?(?:member\s+for|senator|leader\s+of\s+the\s+opposition|deputy\s+leader|manager\s+of\s+opposition)|\bthe\s+call\s+to\s+the\s+honourable\s+for\s+[A-Z]/i;
 
-/**
- * Broader catch — lines that mention "call to the member for X" or leadership roles.
- * Requires "call" to be nearby for "member for X" to avoid false positives from speech lines
- * that incidentally reference a member (e.g. "the member for Hume has voted against...").
- */
+/** Broader catch — any line mentioning "member for" or leadership roles */
 const MEMBER_FOR_RE =
-  /\bcall\b.{0,40}\bmember\s+for\s+[A-Z]|\bcall\b.{0,20}\bsenator\s+(?:for\s+)?[A-Z]|\bmember\s+for\s+[A-Z].{0,40}\bcall\b|\bcall\b.{0,30}\bhonourable\s+for\s+[A-Z]|\bleader\s+of\s+the\s+opposition\b|\bmanager\s+of\s+opposition\b|\bdeputy\s+(?:prime\s+minister|leader)\b/i;
+  /\bmember\s+for\s+[A-Z]|\bsenator\s+(?:for\s+)?[A-Z]|\bleader\s+of\s+the\s+opposition\b|\bmanager\s+of\s+opposition\b|\bdeputy\s+(?:prime\s+minister|leader)\b/i;
 
 /**
  * Patterns that indicate a line is a response/speech, not a Speaker call.
- * e.g. "I thank the member for Calare" or "Senator Colbeck, I generally..."
- * Rolling captions often prepend a sentence fragment: "Minister. I thank the member for Calare"
- * so we match "I thank" both at line start and after a sentence boundary.
+ * Used to exclude false-positive MEMBER_FOR_RE matches from minister responses
+ * or speech content that happens to mention a member.
+ *
+ * Rolling captions may prepend a fragment: "Minister. I thank the member for Calare"
+ * so we match "I thank" both at line start and after a sentence boundary (. ! ?).
  */
 const RESPONSE_CONTEXT_RE =
   /(?:^|[.!?]\s+)I\s+(?:thank|acknowledge|welcome|appreciate|commend|congratulate|understand|would|want|think|also|note|refer|say|can)\b|^Senator\s+\w+,/i;
