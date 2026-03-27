@@ -455,6 +455,10 @@ async function run() {
             const allAiMap = new Map(aiTimestamps.map((t) => [t.questionNumber, t.secFromQtStart]));
             const allQNums = allQuestionsForTimestamps.map((q) => q.questionNumber).sort((a, b) => a - b);
 
+            // Senate captions lag behind speech more than the house, so we shift
+            // AI timestamps earlier by an extra offset to compensate.
+            const chamberLeadSec = config.chamber === "upper" ? 5 : 0;
+
             // Assign start times for real questions only (interpolate gaps)
             const assignedStartsQt = new Map<number, number>(); // qNum → secFromQtStart
             const qNums = realQuestionsForAudio.map((q) => q.questionNumber!);
@@ -463,7 +467,7 @@ async function run() {
             for (const q of realQuestionsForAudio) {
               const secFromQt = allAiMap.get(q.questionNumber!);
               if (secFromQt != null && secFromQt >= minQtSec && secFromQt <= qtDuration) {
-                assignedStartsQt.set(q.questionNumber!, secFromQt);
+                assignedStartsQt.set(q.questionNumber!, Math.max(0, secFromQt - chamberLeadSec));
                 minQtSec = secFromQt + 30;
               }
             }

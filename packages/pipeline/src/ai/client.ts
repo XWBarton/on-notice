@@ -52,11 +52,29 @@ export async function callClaude<T>(
   maxTokens = 512
 ): Promise<T> {
   const text = await callClaudeText(model, system, user, maxTokens);
-  // Try JSON array of objects first, then plain object, then any array
-  const jsonMatch =
-    text.match(/\[\s*\{[\s\S]*\}\s*\]/) ||
-    text.match(/\{[\s\S]*\}/) ||
-    text.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) throw new Error(`No JSON in Claude response: ${text.slice(0, 200)}`);
-  return JSON.parse(jsonMatch[0]) as T;
+
+  // Extract the outermost JSON array or object by finding matching brackets.
+  // Using slice(indexOf, lastIndexOf) is more reliable than greedy regex when
+  // the AI appends trailing explanation text that also contains brackets.
+  const arrStart = text.indexOf("[");
+  const arrEnd = text.lastIndexOf("]");
+  const objStart = text.indexOf("{");
+  const objEnd = text.lastIndexOf("}");
+
+  const hasArray = arrStart !== -1 && arrEnd > arrStart;
+  const hasObject = objStart !== -1 && objEnd > objStart;
+
+  // Prefer array if it starts before or at the same position as the object
+  if (hasArray && (!hasObject || arrStart <= objStart)) {
+    try {
+      return JSON.parse(text.slice(arrStart, arrEnd + 1)) as T;
+    } catch { /* fall through to object */ }
+  }
+  if (hasObject) {
+    try {
+      return JSON.parse(text.slice(objStart, objEnd + 1)) as T;
+    } catch { /* fall through */ }
+  }
+
+  throw new Error(`No valid JSON in Claude response: ${text.slice(0, 300)}`);
 }
