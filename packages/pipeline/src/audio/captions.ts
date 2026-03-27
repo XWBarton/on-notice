@@ -302,12 +302,33 @@ export function buildQtTranscriptFromParlViewCaptions(
   const qtDuration = qtEndSec - qtStartSec;
 
   // Convert to VttEntry[] with QT-relative timestamps
-  const allEntries: VttEntry[] = captions
+  const rawEntries: VttEntry[] = captions
     .map((c) => ({
       sec: timecodeToSeconds(c.In) - qtStartSec,
       text: c.Text.replace(/\s+/g, " ").trim(),
     }))
     .filter((e) => e.sec >= -30 && e.sec <= qtDuration + 30 && e.text.length > 0);
+
+  // ParlView closed captions split speaker calls across consecutive entries, e.g.:
+  //   "country. The call to the honourable"  (no electorate → no pattern match)
+  //   "for Calare. To the Prime Minister,"   (no "member for" prefix → no pattern match)
+  // Merge adjacent entries where the pair together forms a speaker call.
+  const allEntries: VttEntry[] = [];
+  for (let i = 0; i < rawEntries.length; i++) {
+    const curr = rawEntries[i];
+    const next = rawEntries[i + 1];
+    if (
+      next &&
+      /\b(?:call\s+to\s+the\s+(?:honourable|member)|give\s+(?:a\s+)?(?:the\s+)?call\s+to\s+(?:the\s+)?(?:honourable|member))\s*$/i.test(curr.text) &&
+      /^\s*for\s+[A-Z]/i.test(next.text)
+    ) {
+      // Merge: use curr's timestamp, combine text so patterns can match "honourable for X"
+      allEntries.push({ sec: curr.sec, text: `${curr.text} ${next.text}` });
+      i++; // skip next — already merged
+    } else {
+      allEntries.push(curr);
+    }
+  }
 
   const condensed = condenseCaptions(allEntries);
   // vttOffset=0, qtStartSec=0 — entries are already QT-relative
