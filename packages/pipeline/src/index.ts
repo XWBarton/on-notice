@@ -117,10 +117,20 @@ async function run() {
 
       const rows = await fetchSpeechRows(q.gid, oaType as "representatives" | "senate").catch(() => []);
 
-      // First htype=12 row is the question; subsequent ones include the answer
+      // First htype=12 row is the question; subsequent ones from the SAME minister are the answer.
+      // If the GID covers a broad topic section, later rows may be from the next questioner — stop there.
       const speechRows = rows.filter((r) => r.htype === "12");
       const questionRow = speechRows[0];
-      const answerRows = speechRows.slice(1);
+      const ministerKey = speechRows[1]?.speaker
+        ? `${speechRows[1].speaker.first_name} ${speechRows[1].speaker.last_name}`
+        : null;
+      // Only keep rows from the same minister; stop at any different speaker after the minister has spoken
+      const answerRows = ministerKey
+        ? speechRows.slice(1).filter((r) => {
+            const key = r.speaker ? `${r.speaker.first_name} ${r.speaker.last_name}` : null;
+            return key === ministerKey;
+          })
+        : speechRows.slice(1);
 
       questionsWithContent.push({
         ...q,
@@ -457,7 +467,7 @@ async function run() {
 
             // Senate captions lag behind speech more than the house, so we shift
             // AI timestamps earlier by an extra offset to compensate.
-            const chamberLeadSec = config.chamber === "upper" ? 10 : 0;
+            const chamberLeadSec = config.chamber === "upper" ? 3 : 0;
 
             // Assign start times for real questions only (interpolate gaps)
             const assignedStartsQt = new Map<number, number>(); // qNum → secFromQtStart
