@@ -23,7 +23,7 @@ import { upsertDivisions } from "./db/upsert-divisions";
 import { findParlViewVideo, questionTimeOffsets, fetchParlViewCaptions, fetchEventChunks, findChunkForTimecode, timecodeToSeconds } from "./scrapers/parlview";
 import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
-import { uploadEpisode, uploadClip } from "./audio/uploader";
+import { uploadEpisode, uploadClip, uploadChapters } from "./audio/uploader";
 import { buildQtTranscriptFromParlViewCaptions } from "./audio/captions";
 import { extractTimestampsWithAI } from "./ai/timestamp-questions";
 import * as fs from "node:fs";
@@ -425,45 +425,50 @@ async function run() {
               console.log("  No captions available — question timestamps will be interpolated");
             }
 
-            // 8e: Ask Sonnet for question timestamps
-            const aiTimestamps = qtTranscript ? await extractTimestampsWithAI(
-              qtTranscript,
-              realQuestionsForAudio.map((q) => ({
+            // 8e: Ask Sonnet for timestamps — ALL questions (real + Dorothy Dixers).
+            // Dixer timestamps are used as end boundaries for preceding real question clips.
+            const allQuestionsForTimestamps = classifiedQuestions
+              .filter((q) => q.questionNumber)
+              .map((q) => ({
                 questionNumber: q.questionNumber!,
                 askerName: q.askerName ?? null,
                 askerParty: q.askerParty ?? null,
                 electorate: q.askerMemberId ? (memberElectorateMap.get(q.askerMemberId) ?? null) : null,
                 questionText: q.questionText ?? null,
-              })),
+                isDorothyDixer: q.isDorothyDixer,
+              }));
+
+            const aiTimestamps = qtTranscript ? await extractTimestampsWithAI(
+              qtTranscript,
+              allQuestionsForTimestamps,
               config.chamber === "lower" ? "house" : "senate"
             ).catch((e) => { console.warn(`  AI timestamp extraction failed: ${e.message}`); return []; }) : [];
 
-            console.log(`  AI identified ${aiTimestamps.length}/${realQuestionsForAudio.length} question timestamps`);
+            console.log(`  AI identified ${aiTimestamps.length}/${allQuestionsForTimestamps.length} question timestamps`);
             for (const t of aiTimestamps) {
-              console.log(`    Q${t.questionNumber}: T+${t.secFromQtStart}s`);
+              const isDixer = allQuestionsForTimestamps.find(q => q.questionNumber === t.questionNumber)?.isDorothyDixer;
+              console.log(`    Q${t.questionNumber}${isDixer ? " [Dixer]" : ""}: T+${t.secFromQtStart}s`);
             }
 
-            // 8f: Map AI timestamps (QT-relative) to recording-relative positions,
-            // then interpolate any gaps between known timestamps.
-            //
-            // seg.startSec is recording-relative; buildEpisode subtracts bufferedStart
-            // to get the position within the downloaded MP3 file.
-            const qtEnd = qtOffsets.endSec; // recording-relative QT end
+            // 8f: Map AI timestamps to chunk-relative positions.
+            // All question numbers (real + Dixer), sorted, used for boundary lookup.
+            const allAiMap = new Map(aiTimestamps.map((t) => [t.questionNumber, t.secFromQtStart]));
+            const allQNums = allQuestionsForTimestamps.map((q) => q.questionNumber).sort((a, b) => a - b);
 
+            // Assign start times for real questions only (interpolate gaps)
             const assignedStartsQt = new Map<number, number>(); // qNum → secFromQtStart
-            const aiMap = new Map(aiTimestamps.map((t) => [t.questionNumber, t.secFromQtStart]));
+            const qNums = realQuestionsForAudio.map((q) => q.questionNumber!);
             let minQtSec = 0;
 
             for (const q of realQuestionsForAudio) {
-              const secFromQt = aiMap.get(q.questionNumber!);
+              const secFromQt = allAiMap.get(q.questionNumber!);
               if (secFromQt != null && secFromQt >= minQtSec && secFromQt <= qtDuration) {
                 assignedStartsQt.set(q.questionNumber!, secFromQt);
                 minQtSec = secFromQt + 30;
               }
             }
 
-            // Interpolate missing questions between known neighbours
-            const qNums = realQuestionsForAudio.map((q) => q.questionNumber!);
+            // Interpolate missing real questions between known neighbours
             for (let i = 0; i < qNums.length; i++) {
               if (assignedStartsQt.has(qNums[i])) continue;
 
@@ -484,40 +489,58 @@ async function run() {
               assignedStartsQt.set(qNums[i], prevQt + (nextQt - prevQt) * (posInGap / (gapSize + 1)));
             }
 
-            // Convert to chunk-relative positions and build segments.
-            // qtStartInChunk is the 0-based position in the downloaded chunk file where QT starts.
-            // buildEpisode uses: filePos = seg.startSec - bufferedStart
-            // So seg.startSec = qtStartInChunk + secFromQtStart → filePos = secFromQtStart + 30 ✓
+            // Build segments for ALL questions (real + Dorothy Dixers that have timestamps).
+            // Real questions: includeInPodcast=true (clip + podcast episode)
+            // Dorothy Dixers: includeInPodcast=false (clip only, not in podcast feed)
+            //
+            // End boundary = start of the NEXT question (any type, including Dixers).
             const segments: QuestionSegment[] = [];
             const qtStartRec = qtStartInChunk; // chunk-relative QT start (base for segment positions)
+            const fmt = (s: number) => `${Math.floor(s/60)}m${Math.round(s%60)}s`;
 
-            for (let i = 0; i < realQuestionsForAudio.length; i++) {
-              const q = realQuestionsForAudio[i];
-              const secFromQtStart = assignedStartsQt.get(q.questionNumber!) ?? 0;
-              const secFromQtEnd = i + 1 < qNums.length
-                ? (assignedStartsQt.get(qNums[i + 1]) ?? qtDuration)
+            // Build the full ordered list: real questions (with assigned starts) + Dixers with AI timestamps
+            const allSegmentInputs = allQuestionsForTimestamps
+              .filter((q) => !q.isDorothyDixer ? assignedStartsQt.has(q.questionNumber) : allAiMap.has(q.questionNumber))
+              .sort((a, b) => {
+                const aT = !a.isDorothyDixer ? assignedStartsQt.get(a.questionNumber)! : allAiMap.get(a.questionNumber)!;
+                const bT = !b.isDorothyDixer ? assignedStartsQt.get(b.questionNumber)! : allAiMap.get(b.questionNumber)!;
+                return aT - bT;
+              });
+
+            for (let i = 0; i < allSegmentInputs.length; i++) {
+              const q = allSegmentInputs[i];
+              const secFromQtStart = !q.isDorothyDixer
+                ? assignedStartsQt.get(q.questionNumber)!
+                : allAiMap.get(q.questionNumber)!;
+
+              // End = start of next segment in sorted order (any type), or end of QT
+              const nextSec = i + 1 < allSegmentInputs.length
+                ? (!allSegmentInputs[i + 1].isDorothyDixer
+                  ? assignedStartsQt.get(allSegmentInputs[i + 1].questionNumber)!
+                  : allAiMap.get(allSegmentInputs[i + 1].questionNumber)!)
                 : qtDuration;
 
-              const startSec = qtStartRec + secFromQtStart; // recording-relative
-              const endSec = qtStartRec + secFromQtEnd;     // recording-relative
+              const startSec = qtStartRec + secFromQtStart;
+              const endSec = qtStartRec + nextSec;
 
-              const fmt = (s: number) => `${Math.floor(s/60)}m${Math.round(s%60)}s`;
-              console.log(`  Q${q.questionNumber}: ${fmt(startSec)} → ${fmt(endSec)} (T+${Math.round(secFromQtStart)}s–T+${Math.round(secFromQtEnd)}s)`);
+              const qInfo = classifiedQuestions.find(cq => cq.questionNumber === q.questionNumber);
+              console.log(`  Q${q.questionNumber}${q.isDorothyDixer ? " [Dixer]" : ""}: ${fmt(startSec)} → ${fmt(endSec)} (T+${Math.round(secFromQtStart)}s–T+${Math.round(nextSec)}s)`);
 
               segments.push({
-                questionNumber: q.questionNumber ?? i + 1,
-                askerName: q.askerName ?? null,
-                askerParty: q.askerParty ?? null,
-                ministerName: q.ministerName ?? null,
+                questionNumber: q.questionNumber,
+                askerName: qInfo?.askerName ?? null,
+                askerParty: qInfo?.askerParty ?? null,
+                ministerName: qInfo?.ministerName ?? null,
                 startSec,
                 endSec,
                 introClipPath: undefined,
+                includeInPodcast: !q.isDorothyDixer,
               });
             }
 
             // 8g: Build episode — pass bufferedStart so editor can convert to file-relative
             const episodePath = `${workDir}/episode.mp3`;
-            const { durationSec, clipPaths } = await buildEpisode(
+            const { durationSec, clipPaths, chapterStartSecs } = await buildEpisode(
               rawAudioPath,
               bufferedStart,
               segments,
@@ -526,9 +549,31 @@ async function run() {
             );
             console.log(`  Episode built: ${Math.round(durationSec / 60)}min`);
 
-            // 8h: Upload episode to R2
+            // 8h: Upload episode + chapters.json to R2
             const audioUrl = await uploadEpisode(episodePath, parliamentId, date);
-            console.log(`  Uploaded: ${audioUrl}`);
+            console.log(`  Uploaded episode: ${audioUrl}`);
+
+            // Build and upload Podcast 2.0 chapters JSON (real questions only, with real timestamps)
+            const siteUrl = process.env.APP_URL ?? "https://on-notice.xyz";
+            const chaptersData = {
+              version: "1.2.0",
+              chapters: segments
+                .filter((s) => s.includeInPodcast !== false && chapterStartSecs.has(s.questionNumber))
+                .map((s) => {
+                  const qInfo = classifiedQuestions.find((cq) => cq.questionNumber === s.questionNumber);
+                  return {
+                    startTime: chapterStartSecs.get(s.questionNumber)!,
+                    title: qInfo?.subject
+                      ? `Q${s.questionNumber}: ${qInfo.subject}`
+                      : `Question ${s.questionNumber}`,
+                    url: `${siteUrl}/${date}?parliament=${parliamentId}#q${s.questionNumber}`,
+                  };
+                }),
+            };
+            const chaptersFilePath = `${workDir}/chapters.json`;
+            fs.writeFileSync(chaptersFilePath, JSON.stringify(chaptersData));
+            await uploadChapters(chaptersFilePath, parliamentId, date);
+            console.log(`  Chapters uploaded: ${chaptersData.chapters.length} chapters`);
 
             // Save audio URL to sitting_days
             await db.from("sitting_days").update({
@@ -536,7 +581,7 @@ async function run() {
               audio_duration_sec: durationSec,
             }).eq("id", sittingDayId);
 
-            // 8i: Upload per-question clips and store URLs
+            // 8i: Upload per-question clips (real + Dorothy Dixers) and store URLs
             for (const seg of segments) {
               const clipPath = clipPaths.get(seg.questionNumber);
               if (!clipPath || !fs.existsSync(clipPath)) continue;
@@ -545,7 +590,7 @@ async function run() {
                 await db.from("questions").update({ audio_clip_url: clipUrl })
                   .eq("sitting_day_id", sittingDayId)
                   .eq("question_number", seg.questionNumber);
-                console.log(`  Clip uploaded: Q${seg.questionNumber} → ${clipUrl}`);
+                console.log(`  Clip uploaded: Q${seg.questionNumber}${seg.includeInPodcast === false ? " [Dixer]" : ""} → ${clipUrl}`);
               } catch (clipErr) {
                 console.warn(`  Clip upload failed for Q${seg.questionNumber}: ${clipErr}`);
               }
