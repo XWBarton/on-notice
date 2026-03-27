@@ -21,11 +21,6 @@ export async function Footer() {
   return (
     <footer className="mt-16">
       <SupporterBar totalMonthly={totalMonthly} supporterCount={supporterCount} />
-      <div className="border-t border-gray-100 bg-white">
-        <div className="mx-auto max-w-3xl px-4 py-4 text-sm text-gray-500">
-          <span>On Notice — Australian Parliament Feed</span>
-        </div>
-      </div>
     </footer>
   );
 }
