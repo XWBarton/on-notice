@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useBrainrot } from "@/context/BrainrotContext";
 
 interface FeedNavProps {
   currentDate: string;
@@ -10,6 +11,7 @@ interface FeedNavProps {
 
 export function FeedNav({ currentDate, currentParliament, availableDates }: FeedNavProps) {
   const router = useRouter();
+  const { unlocked, active, toggle } = useBrainrot();
 
   const chambers = [
     { id: "fed_hor", label: "House of Reps", activeClass: "bg-[#006945] text-white", hoverClass: "hover:bg-green-50 text-gray-600" },
@@ -22,21 +24,37 @@ export function FeedNav({ currentDate, currentParliament, availableDates }: Feed
 
   return (
     <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between mb-6">
-      {/* Chamber toggle */}
-      <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
-        {chambers.map((c) => (
+      {/* Chamber toggle + brainrot toggle */}
+      <div className="flex items-center gap-2">
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+          {chambers.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => navigate(currentDate, c.id)}
+              className={`px-4 py-1.5 font-medium transition-colors ${
+                currentParliament === c.id
+                  ? c.activeClass
+                  : `bg-white ${c.hoverClass}`
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        {unlocked && (
           <button
-            key={c.id}
-            onClick={() => navigate(currentDate, c.id)}
-            className={`px-4 py-1.5 font-medium transition-colors ${
-              currentParliament === c.id
-                ? c.activeClass
-                : `bg-white ${c.hoverClass}`
+            onClick={toggle}
+            title="Toggle brainrot mode"
+            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+              active
+                ? "bg-purple-500 text-white border-purple-600 hover:bg-purple-600"
+                : "bg-white text-purple-500 border-purple-300 hover:bg-purple-50"
             }`}
           >
-            {c.label}
+            {active ? "brainrot: on" : "brainrot: off"}
           </button>
-        ))}
+        )}
       </div>
 
       {/* Date picker */}

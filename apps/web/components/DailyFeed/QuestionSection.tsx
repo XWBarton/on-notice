@@ -10,6 +10,7 @@ type Question = {
   question_text: string | null;
   answer_text?: string | null;
   ai_summary: string | null;
+  brainrot_summary?: string | null;
   transcript_json?: TranscriptEntry[] | null;
   audio_clip_url?: string | null;
   asker_name?: string | null;

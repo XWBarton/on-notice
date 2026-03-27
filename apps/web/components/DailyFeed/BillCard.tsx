@@ -1,4 +1,7 @@
+"use client";
+
 import { PartyBadge } from "@/components/Member/PartyBadge";
+import { useBrainrot } from "@/context/BrainrotContext";
 
 interface BillCardProps {
   bill: {
@@ -6,6 +9,7 @@ interface BillCardProps {
     short_title: string;
     bill_stage: string | null;
     ai_summary: string | null;
+    brainrot_summary?: string | null;
     source_url: string | null;
     members?: {
       name_display: string;
@@ -16,6 +20,9 @@ interface BillCardProps {
 }
 
 export function BillCard({ bill }: BillCardProps) {
+  const { active } = useBrainrot();
+  const summary = active && bill.brainrot_summary ? bill.brainrot_summary : bill.ai_summary;
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4">
       <div className="flex items-start justify-between gap-3">
@@ -31,8 +38,8 @@ export function BillCard({ bill }: BillCardProps) {
               )}
             </div>
           )}
-          {bill.ai_summary && (
-            <p className="text-sm text-gray-600 mt-2 leading-relaxed">{bill.ai_summary}</p>
+          {summary && (
+            <p className="text-sm text-gray-600 mt-2 leading-relaxed">{summary}</p>
           )}
         </div>
         {bill.bill_stage && (

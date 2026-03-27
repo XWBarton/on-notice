@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import Link from "next/link";
 import { PartyBadge } from "@/components/Member/PartyBadge";
+import { DivisionSummary } from "@/components/DivisionSummary";
 
 export const revalidate = 86400;
 
@@ -71,14 +72,10 @@ export default async function DivisionPage({
           </div>
         )}
 
-        {(division as { ai_summary?: string | null }).ai_summary && (
-          <div className="mt-3">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">AI Summary</p>
-            <p className="text-sm text-gray-600 leading-relaxed">
-              {(division as { ai_summary: string }).ai_summary}
-            </p>
-          </div>
-        )}
+        <DivisionSummary
+          ai_summary={(division as { ai_summary?: string | null }).ai_summary ?? null}
+          brainrot_summary={(division as { brainrot_summary?: string | null }).brainrot_summary ?? null}
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-4">

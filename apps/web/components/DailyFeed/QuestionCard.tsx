@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { PartyBadge } from "@/components/Member/PartyBadge";
+import { useBrainrot } from "@/context/BrainrotContext";
 
 // Maps raw OA party strings (and normalized short names) → display badge
 const PARTY_LOOKUP: Record<string, { short_name: string; colour: string }> = {
@@ -61,6 +62,7 @@ interface QuestionCardProps {
     question_text: string | null;
     answer_text?: string | null;
     ai_summary: string | null;
+    brainrot_summary?: string | null;
     transcript_json?: TranscriptEntry[] | null;
     audio_clip_url?: string | null;
     asker_name?: string | null;
@@ -286,6 +288,8 @@ function AudioClipPlayer({ url }: { url: string }) {
 
 export function QuestionCard({ question }: QuestionCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const { active } = useBrainrot();
+  const displaySummary = active && question.brainrot_summary ? question.brainrot_summary : question.ai_summary;
 
   const hasTranscript = !!(question.question_text || question.answer_text);
 
@@ -329,10 +333,10 @@ export function QuestionCard({ question }: QuestionCardProps) {
         )}
       </div>
 
-      {question.ai_summary && (
+      {displaySummary && (
         <div className="mt-1.5">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">AI Summary</p>
-          <p className="text-sm text-gray-500 leading-relaxed">{question.ai_summary}</p>
+          <p className="text-sm text-gray-500 leading-relaxed">{displaySummary}</p>
         </div>
       )}
 
