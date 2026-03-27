@@ -44,6 +44,31 @@ export async function callClaudeText(
   });
 }
 
+/**
+ * Find the matching closing bracket for the first occurrence of `open` in text.
+ * Returns [startIndex, endIndex] inclusive, or null if not found.
+ */
+function findMatchingBracket(text: string, open: string, close: string): [number, number] | null {
+  const start = text.indexOf(open);
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\" && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === open) depth++;
+    else if (ch === close) {
+      depth--;
+      if (depth === 0) return [start, i];
+    }
+  }
+  return null;
+}
+
 /** Call Claude and parse JSON response. Handles both objects and arrays. */
 export async function callClaude<T>(
   model: string,
@@ -53,26 +78,20 @@ export async function callClaude<T>(
 ): Promise<T> {
   const text = await callClaudeText(model, system, user, maxTokens);
 
-  // Extract the outermost JSON array or object by finding matching brackets.
-  // Using slice(indexOf, lastIndexOf) is more reliable than greedy regex when
-  // the AI appends trailing explanation text that also contains brackets.
-  const arrStart = text.indexOf("[");
-  const arrEnd = text.lastIndexOf("]");
-  const objStart = text.indexOf("{");
-  const objEnd = text.lastIndexOf("}");
-
-  const hasArray = arrStart !== -1 && arrEnd > arrStart;
-  const hasObject = objStart !== -1 && objEnd > objStart;
+  // Extract the outermost JSON structure using proper bracket-depth matching.
+  // lastIndexOf fails when the AI appends trailing text containing brackets.
+  const arrBounds = findMatchingBracket(text, "[", "]");
+  const objBounds = findMatchingBracket(text, "{", "}");
 
   // Prefer array if it starts before or at the same position as the object
-  if (hasArray && (!hasObject || arrStart <= objStart)) {
+  if (arrBounds && (!objBounds || arrBounds[0] <= objBounds[0])) {
     try {
-      return JSON.parse(text.slice(arrStart, arrEnd + 1)) as T;
+      return JSON.parse(text.slice(arrBounds[0], arrBounds[1] + 1)) as T;
     } catch { /* fall through to object */ }
   }
-  if (hasObject) {
+  if (objBounds) {
     try {
-      return JSON.parse(text.slice(objStart, objEnd + 1)) as T;
+      return JSON.parse(text.slice(objBounds[0], objBounds[1] + 1)) as T;
     } catch { /* fall through */ }
   }
 
