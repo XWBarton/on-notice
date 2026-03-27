@@ -25,7 +25,7 @@ export interface QuestionSegment {
   includeInPodcast?: boolean;
 }
 
-const BUFFER_SEC = 3; // seconds of padding before/after each question
+const BUFFER_SEC = 4; // seconds of padding before/after each question
 
 /**
  * Cut a segment from the source audio file.
