@@ -21,9 +21,11 @@ export interface QuestionSegment {
   startSec: number;
   endSec: number;
   introClipPath?: string;
+  /** If false, cut the clip but do NOT include in the podcast episode concatenation. Default: true */
+  includeInPodcast?: boolean;
 }
 
-const BUFFER_SEC = 3; // seconds of padding before/after each question
+const BUFFER_SEC = 5; // seconds of padding before/after each question (increased from 3 to handle caption lag)
 
 /**
  * Cut a segment from the source audio file.
@@ -85,7 +87,8 @@ export async function concatenateAudio(
 
 /**
  * Build a full episode from question segments.
- * For each segment: [intro clip (optional)] + [question audio]
+ * For each segment: cut the clip (always), then add to podcast episode only if includeInPodcast !== false.
+ * Returns clipPaths for all segments and chapterStartSecs for podcast-included segments.
  */
 export async function buildEpisode(
   rawAudioPath: string,
@@ -94,9 +97,11 @@ export async function buildEpisode(
   segments: QuestionSegment[],
   outputPath: string,
   workDir: string
-): Promise<{ path: string; durationSec: number; clipPaths: Map<number, string> }> {
+): Promise<{ path: string; durationSec: number; clipPaths: Map<number, string>; chapterStartSecs: Map<number, number> }> {
   const parts: string[] = [];
   const clipPaths = new Map<number, string>();
+  const chapterStartSecs = new Map<number, number>(); // questionNumber → seconds from episode start
+  let episodePosSec = 0;
 
   for (const seg of segments) {
     // Adjust for the download window offset
@@ -108,15 +113,21 @@ export async function buildEpisode(
       continue;
     }
 
-    // Prepend TTS intro if available
-    if (seg.introClipPath && fs.existsSync(seg.introClipPath)) {
-      parts.push(seg.introClipPath);
-    }
-
     const segPath = path.join(workDir, `q${seg.questionNumber}.mp3`);
     await cutSegment(rawAudioPath, relStart, relEnd, segPath);
     clipPaths.set(seg.questionNumber, segPath);
-    parts.push(segPath);
+
+    // Only include in podcast episode if not excluded
+    if (seg.includeInPodcast !== false) {
+      // Prepend TTS intro if available
+      if (seg.introClipPath && fs.existsSync(seg.introClipPath)) {
+        parts.push(seg.introClipPath);
+      }
+      chapterStartSecs.set(seg.questionNumber, Math.round(episodePosSec));
+      parts.push(segPath);
+      // Advance episode position by the clip duration (including pre+post buffer)
+      episodePosSec += (relEnd - relStart) + BUFFER_SEC * 2;
+    }
   }
 
   if (parts.length === 0) throw new Error("No valid segments to build episode");
@@ -132,5 +143,5 @@ export async function buildEpisode(
   ]);
   const durationSec = Math.round(parseFloat(stdout.trim()));
 
-  return { path: outputPath, durationSec, clipPaths };
+  return { path: outputPath, durationSec, clipPaths, chapterStartSecs };
 }

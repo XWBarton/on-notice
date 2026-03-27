@@ -62,15 +62,9 @@ export async function GET(req: NextRequest) {
       const guid = `${siteUrl}/${day.sitting_date}?parliament=${parliamentId}`;
       const durationSec = day.audio_duration_sec ?? 0;
 
-      const chapters = questions
-        .map((q: any, i: number) => {
-          const chapterTitle = q.subject
-            ? `Q${q.question_number}: ${q.subject}`
-            : `Question ${q.question_number}`;
-          const startTime = Math.round((i / Math.max(questions.length, 1)) * durationSec);
-          return `<podcast:chapter start="${startTime}" title="${escapeXml(chapterTitle)}" />`;
-        })
-        .join("\n        ");
+      // Chapters are served as a Podcast Index JSON file uploaded by the pipeline.
+      // URL is derived from the episode audio_url (same path, different filename).
+      const chaptersUrl = day.audio_url?.replace("episode.mp3", "chapters.json");
 
       const persons = questions
         .slice(0, 5)
@@ -95,7 +89,7 @@ export async function GET(req: NextRequest) {
       <itunes:episodeType>full</itunes:episodeType>
       <itunes:explicit>false</itunes:explicit>
       <podcast:episodeType>full</podcast:episodeType>
-      ${chapters ? `<podcast:chapters>\n        ${chapters}\n      </podcast:chapters>` : ""}
+      ${chaptersUrl ? `<podcast:chapters url="${chaptersUrl}" type="application/json+chapters" />` : ""}
       ${persons}
     </item>`;
     })

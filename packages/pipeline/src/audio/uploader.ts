@@ -38,6 +38,25 @@ export async function uploadClip(
   return `${CDN_BASE}/${key}`;
 }
 
+export async function uploadChapters(
+  localPath: string,
+  parliamentId: string,
+  date: string
+): Promise<string> {
+  const key = `audio/${parliamentId}/${date}/chapters.json`;
+  const body = fs.readFileSync(localPath);
+
+  await r2.send(new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    Body: body,
+    ContentType: "application/json+chapters",
+    CacheControl: "public, max-age=3600",
+  }));
+
+  return `${CDN_BASE}/${key}`;
+}
+
 export async function uploadEpisode(
   localPath: string,
   parliamentId: string,
