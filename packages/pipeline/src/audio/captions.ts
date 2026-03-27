@@ -309,26 +309,35 @@ export function buildQtTranscriptFromParlViewCaptions(
     }))
     .filter((e) => e.sec >= -30 && e.sec <= qtDuration + 30 && e.text.length > 0);
 
-  // ParlView closed captions split speaker calls across consecutive entries, e.g.:
-  //   "country. The call to the honourable"  (no electorate → no pattern match)
-  //   "for Calare. To the Prime Minister,"   (no "member for" prefix → no pattern match)
-  // Merge adjacent entries where the pair together forms a speaker call.
-  const allEntries: VttEntry[] = [];
-  for (let i = 0; i < rawEntries.length; i++) {
-    const curr = rawEntries[i];
-    const next = rawEntries[i + 1];
-    if (
-      next &&
-      /\b(?:call\s+to\s+the\s+(?:honourable|member)|give\s+(?:a\s+)?(?:the\s+)?call\s+to\s+(?:the\s+)?(?:honourable|member))\s*$/i.test(curr.text) &&
-      /^\s*for\s+[A-Z]/i.test(next.text)
-    ) {
-      // Merge: use curr's timestamp, combine text so patterns can match "honourable for X"
-      allEntries.push({ sec: curr.sec, text: `${curr.text} ${next.text}` });
-      i++; // skip next — already merged
-    } else {
-      allEntries.push(curr);
+  // ParlView closed captions split speaker calls across consecutive entries on line boundaries.
+  // Examples:
+  //   "country. The call to the honourable" + "for Calare. To the Prime Minister,"
+  //   "Award workers are as well. Give a"  + "call to the honourable member for" + "Barker."
+  // We do multiple merge passes until stable, merging when an entry ends mid-call.
+  let merging = true;
+  let mergedEntries = rawEntries.slice();
+  while (merging) {
+    merging = false;
+    const pass: VttEntry[] = [];
+    for (let i = 0; i < mergedEntries.length; i++) {
+      const curr = mergedEntries[i];
+      const next = mergedEntries[i + 1];
+      if (next && (
+        // "...call to the honourable" + "for X..." or "...call to the honourable member for" + "Barker..."
+        /\b(?:call\s+to\s+the\s+(?:honourable|member)|give\s+(?:a\s+)?(?:the\s+)?call)\s*$/i.test(curr.text) ||
+        // "...member for" or "...honourable for" at end — electorate is in next entry
+        /\b(?:member|honourable)\s+for\s*$/i.test(curr.text)
+      )) {
+        pass.push({ sec: curr.sec, text: `${curr.text} ${next.text}` });
+        i++;
+        merging = true; // merged something — do another pass in case we need 3-way merge
+      } else {
+        pass.push(curr);
+      }
     }
+    mergedEntries = pass;
   }
+  const allEntries = mergedEntries;
 
   const condensed = condenseCaptions(allEntries);
   // vttOffset=0, qtStartSec=0 — entries are already QT-relative
