@@ -343,10 +343,20 @@ async function run() {
     if (!skipAudio) {
       console.log("Step 8: Audio pipeline...");
       try {
-        // 8a: Find ParlView video ID for today
-        const parlviewVideo = await findParlViewVideo(date, parliamentId as "fed_hor" | "fed_sen");
+        // 8a: Find ParlView video ID for today.
+        // Retry every hour until 7:30am Perth (AWST = UTC+8).
+        // The pipeline starts at 3:30am Perth — up to 4 retries (4:30, 5:30, 6:30, 7:30am).
+        // Text processing above is already done; this only gates the audio.
+        const HOUR_MS = 60 * 60 * 1000;
+        const MAX_RETRIES = 4;
+        let parlviewVideo = await findParlViewVideo(date, parliamentId as "fed_hor" | "fed_sen");
+        for (let attempt = 1; attempt <= MAX_RETRIES && !parlviewVideo; attempt++) {
+          console.log(`  No ParlView video found (attempt ${attempt}/${MAX_RETRIES}) — waiting 1 hour before retry...`);
+          await new Promise((r) => setTimeout(r, HOUR_MS));
+          parlviewVideo = await findParlViewVideo(date, parliamentId as "fed_hor" | "fed_sen");
+        }
         if (!parlviewVideo) {
-          console.log("  No ParlView video found — skipping audio");
+          console.log("  No ParlView video found after all retries — skipping audio");
         } else {
           console.log(`  ParlView video: ${parlviewVideo.id} (${parlviewVideo.title})`);
 
