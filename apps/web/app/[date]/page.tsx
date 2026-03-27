@@ -86,7 +86,7 @@ export default async function DatePage({
     <div>
       {inRecess && (
         <div className="mb-6 text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
-          Parliament is currently in recess. Showing the most recent sitting day.{" "}
+          Parliament is not currently sitting. Showing the most recent sitting day.{" "}
           <a href="/calendar" className="text-blue-600 hover:underline">View sitting calendar →</a>
         </div>
       )}
