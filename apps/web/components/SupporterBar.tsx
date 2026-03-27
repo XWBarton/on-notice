@@ -1,5 +1,5 @@
 const GOAL = 30; // AUD per month
-const BMAC_URL = "https://buymeacoffee.com/xbarton/membership";
+const KOFI_URL = "https://ko-fi.com/xbarton";
 
 interface SupporterBarProps {
   totalMonthly: number;
@@ -28,7 +28,7 @@ export function SupporterBar({ totalMonthly, supporterCount }: SupporterBarProps
         <p className="mt-2 text-xs text-gray-400">
           On Notice is free and independent.{" "}
           <a
-            href={BMAC_URL}
+            href={KOFI_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="text-green-600 hover:underline font-medium"
