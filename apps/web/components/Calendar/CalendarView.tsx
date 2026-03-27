@@ -88,8 +88,8 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
 
       {/* Day headers */}
       <div className="grid grid-cols-7 text-center">
-        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
-          <div key={i} className="text-xs text-gray-300 font-medium pb-2">{d}</div>
+        {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d, i) => (
+          <div key={i} className={`text-xs font-medium pb-2 ${i >= 5 ? "text-gray-200" : "text-gray-400"}`}>{d}</div>
         ))}
 
         {/* Padding */}
@@ -129,12 +129,12 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
               }`}>
                 {format(day, "d")}
               </span>
-              <div className="flex gap-0.5 mt-1 justify-center">
+              <div className="flex gap-1 mt-1.5 justify-center">
                 {horDotStyle && (
-                  <span className="w-1.5 h-1.5 rounded-full inline-block" style={horDotStyle} />
+                  <span className="w-2 h-2 rounded-full inline-block" style={horDotStyle} />
                 )}
                 {senDotStyle && (
-                  <span className="w-1.5 h-1.5 rounded-full inline-block" style={senDotStyle} />
+                  <span className="w-2 h-2 rounded-full inline-block" style={senDotStyle} />
                 )}
               </div>
             </div>
@@ -145,7 +145,7 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
               <a
                 key={dateStr}
                 href={`/${dateStr}`}
-                className={`rounded-lg hover:bg-gray-50 transition-colors ${todayDate ? "ring-1 ring-gray-200" : ""}`}
+                className={`rounded-lg hover:bg-gray-50 transition-colors ${todayDate ? "ring-2 ring-gray-300 bg-gray-50" : ""}`}
                 title={buildTitle(dateStr, horLevel, senLevel)}
               >
                 {inner}
@@ -154,7 +154,7 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
           }
 
           return (
-            <div key={dateStr} className={`rounded-lg ${todayDate ? "ring-1 ring-gray-200" : ""}`}>
+            <div key={dateStr} className={`rounded-lg ${todayDate ? "ring-2 ring-gray-300 bg-gray-50" : ""}`}>
               {inner}
             </div>
           );
@@ -162,34 +162,53 @@ export function CalendarView({ dataMap, scheduledDates }: CalendarViewProps) {
       </div>
 
       {/* Legend */}
-      <div className="space-y-2 pt-1">
-        <div className="flex gap-4 text-xs text-gray-400">
+      <div className="pt-2 border-t border-gray-100 space-y-3">
+        {/* Chambers */}
+        <div className="flex gap-5 text-xs text-gray-500">
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#006945] inline-block" /> House
+            <span className="w-2 h-2 rounded-full bg-[#006945] inline-block" />
+            House of Representatives
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#C1121F] inline-block" /> Senate
+            <span className="w-2 h-2 rounded-full bg-[#C1121F] inline-block" />
+            Senate
           </span>
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
+        {/* Status progression */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-400">
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full inline-block" style={{ border: "1.5px solid #888" }} />
+            <span className="flex gap-0.5">
+              <span className="w-2 h-2 rounded-full inline-block" style={{ border: "1.5px solid #006945" }} />
+              <span className="w-2 h-2 rounded-full inline-block" style={{ border: "1.5px solid #C1121F" }} />
+            </span>
             Scheduled
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full inline-block bg-gray-300" />
+            <span className="flex gap-0.5">
+              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: "#00694540" }} />
+              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: "#C1121F40" }} />
+            </span>
             Processing
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full inline-block bg-gray-400" />
+            <span className="flex gap-0.5">
+              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: "#00694599" }} />
+              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: "#C1121F99" }} />
+            </span>
             Summaries
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full inline-block bg-gray-600" />
+            <span className="flex gap-0.5">
+              <span className="w-2 h-2 rounded-full inline-block bg-[#006945]" />
+              <span className="w-2 h-2 rounded-full inline-block bg-[#C1121F]" />
+            </span>
             Audio clips
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full inline-block bg-gray-600" style={{ boxShadow: "0 0 0 1.5px white, 0 0 0 3px #666" }} />
+            <span className="flex gap-0.5">
+              <span className="w-2 h-2 rounded-full inline-block bg-[#006945]" style={{ boxShadow: "0 0 0 1.5px white, 0 0 0 3px #006945" }} />
+              <span className="w-2 h-2 rounded-full inline-block bg-[#C1121F]" style={{ boxShadow: "0 0 0 1.5px white, 0 0 0 3px #C1121F" }} />
+            </span>
             Podcast
           </span>
         </div>

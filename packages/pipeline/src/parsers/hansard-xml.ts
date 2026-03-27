@@ -86,10 +86,31 @@ export function parseDebates(data: OADebatesResponse): {
       for (const q of qs) questions.push({ ...q, questionNumber: offset + q.questionNumber });
     }
 
-    // Bills
+    // Bills — two forms:
+    // 1. Top-level section is the bill reading itself (e.g. "Some Bill — First Reading")
+    // 2. Top-level section is a "BILLS" container; individual readings are in subs
     if (title.includes("BILL") && (title.includes("READING") || title.includes("INTRODUCTION"))) {
       const bill = parseBillSection(entry, section.subs ?? []);
       if (bill) bills.push(bill);
+    } else if (/^BILLS?\s*$/.test(title.trim())) {
+      for (const sub of section.subs ?? []) {
+        const subTitle = (sub.body ?? "").toUpperCase();
+        if (subTitle.includes("BILL") && (subTitle.includes("READING") || subTitle.includes("INTRODUCTION"))) {
+          const bill = parseBillSection(sub, []);
+          if (bill) bills.push(bill);
+        }
+      }
+    }
+
+    // Questions — also check subs when top-level section doesn't match QT titles
+    if (!title.includes("QUESTIONS WITHOUT NOTICE") && !title.includes("QUESTION TIME")) {
+      for (const sub of section.subs ?? []) {
+        const subTitle = (sub.body ?? "").toUpperCase();
+        if (subTitle.includes("QUESTIONS WITHOUT NOTICE") || subTitle.includes("QUESTION TIME")) {
+          console.log(`  → Found question time in sub: ${subTitle.slice(0, 80)}`);
+          // sub is OAEntry, not OASection — can't recurse further here; log for investigation
+        }
+      }
     }
 
     // Division timestamps — OA logs each division as a section with htime
