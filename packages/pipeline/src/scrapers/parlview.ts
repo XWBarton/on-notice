@@ -169,12 +169,15 @@ export async function findParlViewVideo(
     page.on("response", async (response) => {
       const url = response.url();
       if (!url.includes("vodapi.aph.gov.au")) return;
+      console.log(`  [ParlView] vodapi call: ${url}`);
 
       try {
         const json = await response.json();
 
         // Search results response
         if (json?.searchResults?.videos) {
+          const allTitles = json.searchResults.videos.map((v: Record<string, string>) => v.title).join(", ");
+          console.log(`  [ParlView] search returned ${json.searchResults.videos.length} videos (titles: ${allTitles || "none"})`);
           for (const v of json.searchResults.videos) {
             if (
               v.title === ddmmyyyy &&
@@ -215,15 +218,25 @@ export async function findParlViewVideo(
       }
     });
 
-    // Build the search URL — ParlView expects DD/MM/YYYY for date_start/date_end
+    // Build the search URL. Try YYYY-MM-DD first (standard), then DD/MM/YYYY as fallback.
+    // ParlView's React app reads these params; the exact format it expects is unclear,
+    // so we log the URL and rely on the debug output to confirm.
     const chamber = parliamentId === "fed_hor" ? "House+of+Representatives" : "Senate";
-    const encodedDate = encodeURIComponent(ddmmyyyy); // "25%2F03%2F2026"
-    const searchUrl = `https://parlview.aph.gov.au/parlviewSearch.php?action=search&dropdown=custom&date_start=${encodedDate}&date_end=${encodedDate}&query=${chamber}+Chamber&order=date&direction=DESC&itemsPerPage=20&page=1`;
+    const searchUrl = `https://parlview.aph.gov.au/parlviewSearch.php?action=search&dropdown=custom&date_start=${date}&date_end=${date}&query=${chamber}+Chamber&order=date&direction=DESC&itemsPerPage=20&page=1`;
+    console.log(`  [ParlView] navigating to: ${searchUrl}`);
+
+    // Wait explicitly for a vodapi response rather than a fixed timeout
+    const vodapiResponsePromise = page.waitForResponse(
+      (r) => r.url().includes("vodapi.aph.gov.au"),
+      { timeout: 30000 }
+    ).catch(() => {
+      console.warn("  [ParlView] no vodapi response intercepted within 30s");
+    });
 
     await page.goto(searchUrl, { waitUntil: "networkidle2", timeout: 60000 });
-
-    // Give React a moment to finish rendering
-    await new Promise((r) => setTimeout(r, 3000));
+    await vodapiResponsePromise;
+    // Small buffer for the response handler's async json() call to complete
+    await new Promise((r) => setTimeout(r, 500));
 
     if (videos.length > 0) {
       // Prefer the one with segments (Question Time info)
