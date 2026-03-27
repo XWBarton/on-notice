@@ -56,6 +56,8 @@ export interface Database {
           sitting_date: string;
           hansard_url: string | null;
           audio_source_url: string | null;
+          audio_url: string | null;
+          audio_duration_sec: number | null;
           pipeline_status: string;
           pipeline_error: string | null;
           created_at: string;
@@ -122,6 +124,7 @@ export interface Database {
           ai_summary: string | null;
           audio_start_sec: number | null;
           audio_end_sec: number | null;
+          audio_clip_url: string | null;
           created_at: string;
         };
         Insert: Omit<Database["public"]["Tables"]["questions"]["Row"], "id" | "created_at">;
