@@ -33,7 +33,7 @@ export function SupporterBar({ totalMonthly, supporterCount }: SupporterBarProps
             rel="noopener noreferrer"
             className="text-green-600 hover:underline font-medium"
           >
-            Support it for $1/month
+            Support it for $2/month
           </a>{" "}
           to keep it running.
         </p>
