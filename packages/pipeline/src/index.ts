@@ -19,6 +19,7 @@ import { summariseBill } from "./ai/summarise-bill";
 import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
 import { summariseDivision } from "./ai/summarise-division";
+import { brainrotify, brainrotifyDigest } from "./ai/brainrotify";
 import { upsertDivisions } from "./db/upsert-divisions";
 import { findParlViewVideo, questionTimeOffsets, fetchParlViewCaptions, fetchEventChunks, findChunkForTimecode, timecodeToSeconds } from "./scrapers/parlview";
 import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
@@ -191,7 +192,8 @@ async function run() {
         parliament: config.name,
       }).catch((e) => { console.warn(`Division summary failed: ${e.message}`); return null; });
       if (summary) {
-        await db.from("divisions").update({ ai_summary: summary }).eq("id", div.id);
+        const brainrotSummary = await brainrotify(summary).catch(() => null);
+        await db.from("divisions").update({ ai_summary: summary, brainrot_summary: brainrotSummary }).eq("id", div.id);
       }
     }
 
@@ -231,6 +233,10 @@ async function run() {
         return null;
       });
 
+      const brainrotSummary = summary
+        ? await brainrotify(summary).catch(() => null)
+        : null;
+
       const { error } = await db.from("bills").upsert(
         {
           parliament_id: parliamentId,
@@ -239,6 +245,7 @@ async function run() {
           long_title: bill.longTitle,
           bill_stage: bill.stage,
           ai_summary: summary,
+          brainrot_summary: brainrotSummary,
         },
         { onConflict: "parliament_id,bill_number" }
       );
@@ -272,6 +279,10 @@ async function run() {
         aiSummary = result?.summary ?? null;
       }
 
+      const brainrotSummary = aiSummary
+        ? await brainrotify(aiSummary).catch(() => null)
+        : null;
+
       const { error } = await db.from("questions").upsert(
         {
           sitting_day_id: sittingDayId,
@@ -283,6 +294,7 @@ async function run() {
           answer_text: q.answerText,
           is_dorothy_dixer: q.isDorothyDixer,
           ai_summary: aiSummary,
+          brainrot_summary: brainrotSummary,
           transcript_json: q.transcriptJson ?? null,
           asker_name: q.askerName,
           asker_party: q.askerParty ? (FEDERAL_PARTIES[q.askerParty]?.short_name ?? q.askerParty) : null,
@@ -329,11 +341,18 @@ async function run() {
       return { lede: "", digest: "" };
     });
 
+    const brainrotDigest =
+      digest.lede && digest.digest
+        ? await brainrotifyDigest(digest.lede, digest.digest).catch(() => ({ lede: null, digest: null }))
+        : { lede: null, digest: null };
+
     await db.from("daily_digests").upsert(
       {
         sitting_day_id: sittingDayId,
         lede: digest.lede,
         ai_summary: digest.digest,
+        brainrot_lede: brainrotDigest.lede,
+        brainrot_summary: brainrotDigest.digest,
         generated_at: new Date().toISOString(),
       },
       { onConflict: "sitting_day_id" }
