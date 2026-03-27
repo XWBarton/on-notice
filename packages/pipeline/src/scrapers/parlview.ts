@@ -215,9 +215,10 @@ export async function findParlViewVideo(
       }
     });
 
-    // Build the search URL
+    // Build the search URL — ParlView expects DD/MM/YYYY for date_start/date_end
     const chamber = parliamentId === "fed_hor" ? "House+of+Representatives" : "Senate";
-    const searchUrl = `https://parlview.aph.gov.au/parlviewSearch.php?action=search&dropdown=custom&date_start=${date}&date_end=${date}&query=${chamber}+Chamber&order=date&direction=DESC&itemsPerPage=20&page=1`;
+    const encodedDate = encodeURIComponent(ddmmyyyy); // "25%2F03%2F2026"
+    const searchUrl = `https://parlview.aph.gov.au/parlviewSearch.php?action=search&dropdown=custom&date_start=${encodedDate}&date_end=${encodedDate}&query=${chamber}+Chamber&order=date&direction=DESC&itemsPerPage=20&page=1`;
 
     await page.goto(searchUrl, { waitUntil: "networkidle2", timeout: 60000 });
 
