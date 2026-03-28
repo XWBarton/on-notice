@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       parliament:
-        description: 'Parliament ID (fed_hor or fed_sen)'
+        description: 'Parliament ID (fed_hor, fed_sen, wa_la, wa_lc)'
         required: false
         default: 'fed_hor'
       date:
@@ -22,14 +22,16 @@ on:
         default: false
 
 jobs:
-  pipeline:
+  # ── Federal pipeline (House + Senate) ──────────────────────────────────────
+  federal:
     name: ${{ matrix.parliament }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    if: github.event_name == 'schedule' || startsWith(github.event.inputs.parliament, 'fed_')
     strategy:
       fail-fast: false
       matrix:
-        parliament: ${{ github.event_name == 'schedule' && fromJSON('["fed_hor","fed_sen"]') || fromJSON(format('["{0}"]', github.event.inputs.parliament || 'fed_hor')) }}
+        parliament: ${{ github.event_name == 'schedule' && fromJSON('["fed_hor","fed_sen"]') || fromJSON(format('["{0}"]', github.event.inputs.parliament)) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +46,6 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          # Remove pre-installed ffmpeg (lacks libmp3lame) so the apt version takes precedence
           sudo rm -f /usr/local/bin/ffmpeg /usr/local/bin/ffprobe || true
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg libavcodec-extra
@@ -76,14 +77,70 @@ jobs:
         run: |
           ARGS="--parliament ${{ matrix.parliament }}"
           DATE_ARG="${{ github.event.inputs.date }}"
-          if [ -n "$DATE_ARG" ]; then
-            ARGS="$ARGS --date $DATE_ARG"
-          fi
-          if [ "${{ github.event.inputs.skip_audio || 'false' }}" = "true" ]; then
-            ARGS="$ARGS --skip-audio"
-          fi
+          if [ -n "$DATE_ARG" ]; then ARGS="$ARGS --date $DATE_ARG"; fi
+          if [ "${{ github.event.inputs.skip_audio || 'false' }}" = "true" ]; then ARGS="$ARGS --skip-audio"; fi
           npx ts-node packages/pipeline/src/index.ts $ARGS
 
       - name: Notify on failure
         if: failure()
         run: echo "::error::${{ matrix.parliament }} pipeline failed — check logs above"
+
+  # ── WA pipeline (Legislative Assembly) ─────────────────────────────────────
+  wa:
+    name: ${{ matrix.parliament }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    if: github.event_name == 'schedule' || startsWith(github.event.inputs.parliament, 'wa_')
+    strategy:
+      fail-fast: false
+      matrix:
+        parliament: ${{ github.event_name == 'schedule' && fromJSON('["wa_la"]') || fromJSON(format('["{0}"]', github.event.inputs.parliament)) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install system dependencies
+        run: |
+          sudo rm -f /usr/local/bin/ffmpeg /usr/local/bin/ffprobe || true
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg libavcodec-extra
+          which ffmpeg && ffmpeg -encoders 2>&1 | grep -E "mp3|aac|opus|vorbis" || true
+
+      - name: Restore audio cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/on-notice-wa-*
+          key: audio-wa-v1-${{ matrix.parliament }}-${{ github.event.inputs.date || 'today' }}
+
+      - name: Run WA pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_CDN_URL: ${{ secrets.R2_CDN_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          APP_URL: ${{ secrets.APP_URL }}
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          ARGS="--parliament ${{ matrix.parliament }}"
+          DATE_ARG="${{ github.event.inputs.date }}"
+          if [ -n "$DATE_ARG" ]; then ARGS="$ARGS --date $DATE_ARG"; fi
+          if [ "${{ github.event.inputs.skip_audio || 'false' }}" = "true" ]; then ARGS="$ARGS --skip-audio"; fi
+          npx ts-node packages/wa-pipeline/src/index.ts $ARGS
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::${{ matrix.parliament }} WA pipeline failed — check logs above"
