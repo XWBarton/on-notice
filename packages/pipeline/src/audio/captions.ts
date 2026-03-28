@@ -98,8 +98,9 @@ function condenseCaptions(entries: VttEntry[]): VttEntry[] {
 }
 
 /**
- * Filter condensed entries to Speaker-call lines + 30-second time markers.
- * Reduces ~140K tokens of full speech content to ~1–2K tokens.
+ * Filter condensed entries to Speaker-call lines + surrounding context + 30-second time markers.
+ * Includes lines before each speaker call (tail of minister's answer) and after (question opener).
+ * Reduces ~140K tokens of full speech content to ~2–4K tokens.
  */
 function buildSpeakerCallTranscript(
   condensed: VttEntry[],
@@ -107,14 +108,43 @@ function buildSpeakerCallTranscript(
   qtStartSec: number,
   qtEndSec: number
 ): string {
+  const qtDuration = qtEndSec - qtStartSec;
+  const MAX_BEFORE = 6; // lines before each speaker call (tail of minister's answer)
+  const MAX_AFTER = 4;  // lines after each speaker call (question opener)
+
+  // Pass 1: find indices of all speaker calls and question openers within the QT window
+  const anchorIndices = new Set<number>();
+  for (let i = 0; i < condensed.length; i++) {
+    const qtRelSec = Math.round(condensed[i].sec - vttOffset - qtStartSec);
+    if (qtRelSec < -30 || qtRelSec > qtDuration + 30) continue;
+    const isSpeakerCall = SPEAKER_CALL_RE.test(condensed[i].text) ||
+      (MEMBER_FOR_RE.test(condensed[i].text) && !RESPONSE_CONTEXT_RE.test(condensed[i].text));
+    const isQuestionOpener = /\bmy\s+question\s+is\s+to\s+the\b/i.test(condensed[i].text);
+    if (isSpeakerCall || isQuestionOpener) anchorIndices.add(i);
+  }
+
+  // Pass 2: build include set — surrounding window around each anchor
+  const includeSet = new Set<number>();
+  // Always include the full opening window for Q1 matching
+  for (let i = 0; i < condensed.length; i++) {
+    const qtRelSec = Math.round(condensed[i].sec - vttOffset - qtStartSec);
+    if (qtRelSec >= -30 && qtRelSec <= 300) includeSet.add(i);
+  }
+  for (const ci of anchorIndices) {
+    for (let j = Math.max(0, ci - MAX_BEFORE); j <= Math.min(condensed.length - 1, ci + MAX_AFTER); j++) {
+      includeSet.add(j);
+    }
+  }
+
+  // Pass 3: emit included entries with time markers
   const lines: string[] = [];
   let lastMarkerSec = -60;
-  let linesAfterCall = 0;
-  const MAX_AFTER = 4; // include first few lines of each question for content matching
+  let prevIncluded = false;
 
-  for (const e of condensed) {
+  for (let i = 0; i < condensed.length; i++) {
+    const e = condensed[i];
     const qtRelSec = Math.round(e.sec - vttOffset - qtStartSec);
-    if (qtRelSec < -30 || qtRelSec > qtEndSec - qtStartSec + 30) continue;
+    if (qtRelSec < -30 || qtRelSec > qtDuration + 30) continue;
 
     // Insert time marker every 30s
     if (qtRelSec - lastMarkerSec >= 30) {
@@ -122,21 +152,14 @@ function buildSpeakerCallTranscript(
       lastMarkerSec = qtRelSec;
     }
 
-    // Include all lines in first 5 minutes — Q1's Speaker call is never captured
-    // due to subtitle lag, so we need the full content to match Q1 by question text
-    const inOpeningWindow = qtRelSec <= 300;
-    const isSpeakerCall = SPEAKER_CALL_RE.test(e.text) ||
-      (MEMBER_FOR_RE.test(e.text) && !RESPONSE_CONTEXT_RE.test(e.text));
-    // "My question is to the..." — always include as a fallback anchor for the AI
-    // when no Speaker call is present in captions (e.g. no call for this electorate)
-    const isQuestionOpener = /\bmy\s+question\s+is\s+to\s+the\b/i.test(e.text);
-    if (inOpeningWindow || isSpeakerCall || isQuestionOpener) {
+    if (includeSet.has(i)) {
+      if (!prevIncluded && lines.length > 0 && !lines[lines.length - 1].startsWith("---")) {
+        lines.push("...");
+      }
       lines.push(`T+${qtRelSec}s: ${e.text}`);
-      if (isSpeakerCall) linesAfterCall = MAX_AFTER;
-      if (isQuestionOpener) linesAfterCall = Math.max(linesAfterCall, 2);
-    } else if (linesAfterCall > 0) {
-      lines.push(`T+${qtRelSec}s: ${e.text}`);
-      linesAfterCall--;
+      prevIncluded = true;
+    } else {
+      prevIncluded = false;
     }
   }
 

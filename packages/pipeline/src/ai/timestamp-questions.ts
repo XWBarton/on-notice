@@ -9,6 +9,8 @@ export interface QuestionTimestamp {
   questionNumber: number;
   /** Seconds from the start of Question Time (T+0 = QT begins) */
   secFromQtStart: number;
+  /** Seconds from QT start when the minister finishes answering (just before the next Speaker call) */
+  endSecFromQtStart?: number;
 }
 
 export async function extractTimestampsWithAI(
@@ -49,8 +51,8 @@ export async function extractTimestampsWithAI(
 
   const result = await callClaude<QuestionTimestamp[]>(
     SONNET,
-    `You are finding question start timestamps in Australian Parliament Question Time captions.
-The transcript contains only Speaker announcement lines and time markers (--- T+Xs ---).
+    `You are finding question timestamps in Australian Parliament Question Time captions.
+The transcript contains Speaker announcement lines, surrounding context lines, and time markers (--- T+Xs ---).
 Timestamps are seconds from the start of Question Time (T+0 = QT begins).
 
 The Speaker announces each questioner with phrases like: ${callPattern}
@@ -60,11 +62,13 @@ ALL questions are listed — including Dorothy Dixers (same-party questions). Fi
 Dorothy Dixer timestamps are used as end boundaries for the preceding real question's clip.
 Q1 is always the very first Speaker call in the transcript, even if the subtitle starts mid-question.
 
-Return ONLY a JSON array, no explanation: [{"questionNumber":1,"secFromQtStart":45}]`,
+Return ONLY a JSON array, no explanation: [{"questionNumber":1,"secFromQtStart":45,"endSecFromQtStart":118}]`,
     `Questions to find (all questions including Dorothy Dixers, in QT order):
 ${questionList}
 
-For each question, find the timestamp for the START of that questioner's speech (just before they say "My question is to the...").
+For each question, find TWO timestamps:
+
+1. START (secFromQtStart): when the questioner begins speaking.
 - Primary: find the Speaker's call for that questioner (${chamber === "senate" ? '"Senator [Name]"' : '"member for [electorate]"'}) — use the timestamp of that call
 - Also try: if no electorate is given, search for the questioner's last name in call patterns (e.g. "member for ... Smith" or "give the call to Smith")
 - Secondary: if no Speaker call found, find where the questioner says "My question is to the Minister" or "My question is to the Prime Minister" — the timestamp should be 2–3 seconds BEFORE that phrase appears
@@ -73,19 +77,32 @@ For each question, find the timestamp for the START of that questioner's speech 
 - For unknown questions (no name/${chamber === "senate" ? "state" : "electorate"}): count Speaker calls in order after the last identified question
 ${chamber === "senate" ? "- Senate calls are often brief (e.g. \"Call to Senator Smith\"). Find the FIRST moment the senator is named or called — not when they start speaking." : ""}
 
-Return JSON array: [{"questionNumber": N, "secFromQtStart": T}, ...]
+2. END (endSecFromQtStart): when the minister finishes answering — the last line of the minister's response, just before the Speaker calls the next questioner or order is called.
+- Look at the lines just BEFORE the next question's Speaker call in the transcript
+- The end is the timestamp of the last substantive speech line before the next Speaker announcement
+- Omit endSecFromQtStart if you cannot confidently identify it
+
+Return JSON array: [{"questionNumber": N, "secFromQtStart": T, "endSecFromQtStart": U}, ...]
 Include ALL questions you can identify — both real and Dorothy Dixer. Omit only if genuinely not found.
 
-Transcript (Speaker calls + first lines of each question):
+Transcript (Speaker calls + surrounding context lines):
 ${speakerCallTranscript}`,
-    1024
+    1500
   );
 
   if (!Array.isArray(result)) return [];
-  return result.filter(
-    (r) =>
-      typeof r.questionNumber === "number" &&
-      typeof r.secFromQtStart === "number" &&
-      r.secFromQtStart >= 0
-  );
+  return result
+    .filter(
+      (r) =>
+        typeof r.questionNumber === "number" &&
+        typeof r.secFromQtStart === "number" &&
+        r.secFromQtStart >= 0
+    )
+    .map((r) => ({
+      questionNumber: r.questionNumber,
+      secFromQtStart: r.secFromQtStart,
+      ...(typeof r.endSecFromQtStart === "number" && r.endSecFromQtStart > r.secFromQtStart
+        ? { endSecFromQtStart: r.endSecFromQtStart }
+        : {}),
+    }));
 }

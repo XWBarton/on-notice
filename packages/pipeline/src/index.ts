@@ -564,24 +564,35 @@ async function run() {
             const memberClipPaths = await fetchMemberClips(askerMemberIds, workDir);
             console.log(`  Member clips available: ${memberClipPaths.size}/${askerMemberIds.length}`);
 
+            // Build end timestamp map from AI results
+            const aiEndMap = new Map(
+              aiTimestamps
+                .filter((t) => t.endSecFromQtStart != null)
+                .map((t) => [t.questionNumber, t.endSecFromQtStart!])
+            );
+
             for (let i = 0; i < allSegmentInputs.length; i++) {
               const q = allSegmentInputs[i];
               const secFromQtStart = !q.isDorothyDixer
                 ? assignedStartsQt.get(q.questionNumber)!
                 : allAiMap.get(q.questionNumber)!;
 
-              // End = start of next segment in sorted order (any type), or end of QT
+              // End = AI end timestamp if available, else start of next segment, else end of QT
               const nextSec = i + 1 < allSegmentInputs.length
                 ? (!allSegmentInputs[i + 1].isDorothyDixer
                   ? assignedStartsQt.get(allSegmentInputs[i + 1].questionNumber)!
                   : allAiMap.get(allSegmentInputs[i + 1].questionNumber)!)
                 : qtDuration;
+              const aiEndSec = aiEndMap.get(q.questionNumber);
+              // Use AI end if it's credible: after start and before (or up to 30s past) the next question start
+              const useAiEnd = aiEndSec != null && aiEndSec > secFromQtStart && aiEndSec < nextSec + 30;
 
               const startSec = qtStartRec + secFromQtStart;
-              const endSec = qtStartRec + nextSec;
+              const endSec = qtStartRec + (useAiEnd ? aiEndSec! : nextSec);
 
               const qInfo = classifiedQuestions.find(cq => cq.questionNumber === q.questionNumber);
-              console.log(`  Q${q.questionNumber}${q.isDorothyDixer ? " [Dixer]" : ""}: ${fmt(startSec)} → ${fmt(endSec)} (T+${Math.round(secFromQtStart)}s–T+${Math.round(nextSec)}s)`);
+              const endLabel = useAiEnd ? `T+${Math.round(aiEndSec!)}s [AI end]` : `T+${Math.round(nextSec)}s [next Q]`;
+              console.log(`  Q${q.questionNumber}${q.isDorothyDixer ? " [Dixer]" : ""}: ${fmt(startSec)} → ${fmt(endSec)} (T+${Math.round(secFromQtStart)}s–${endLabel})`);
 
               segments.push({
                 questionNumber: q.questionNumber,
