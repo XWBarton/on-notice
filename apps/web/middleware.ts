@@ -12,7 +12,10 @@ export function middleware(request: NextRequest) {
     if (!url.pathname.startsWith("/wa")) {
       url.pathname = "/wa" + url.pathname;
     }
-    return NextResponse.rewrite(url);
+    const response = NextResponse.rewrite(url, {
+      request: { headers: new Headers({ ...Object.fromEntries(request.headers), "x-is-wa": "1" }) },
+    });
+    return response;
   }
 
   return NextResponse.next();

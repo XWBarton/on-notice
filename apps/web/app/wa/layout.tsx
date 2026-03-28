@@ -29,6 +29,7 @@ export default function WALayout({ children }: { children: React.ReactNode }) {
           </a>
           <nav className="flex gap-6 text-sm text-gray-600">
             <a href="/podcast" className="hover:text-gray-900">Podcast</a>
+            <a href="/api/feed.xml" className="hover:text-gray-900">RSS</a>
           </nav>
         </div>
       </header>
