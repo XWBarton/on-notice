@@ -38,48 +38,47 @@ async function scrapeChamber(parliamentId: "wa_la" | "wa_lc"): Promise<WAMember[
   return parseMemberList(html, parliamentId);
 }
 
+/**
+ * Row structure (4 <td> columns):
+ *   [0] photo <img>
+ *   [1] <a>Mr First <b>LAST</b></a> MLA\nParty: ALP
+ *   [2] <a href="...electorate...">Electorate name</a>
+ *   [3] office address
+ */
 function parseMemberList(html: string, parliamentId: "wa_la" | "wa_lc"): WAMember[] {
   const $ = cheerio.load(html);
   const members: WAMember[] = [];
 
-  // Each member entry wraps name, party, and electorate
-  // The listing has <h3><a>Title First LAST</a> MLA/MLC</h3> and party info in adjacent <p>
-  $("h3, .member-name, [class*='member']").each((_, el) => {
-    const link = $(el).find("a").first();
+  $("tbody tr").each((_, row) => {
+    const cells = $(row).find("td");
+    if (cells.length < 3) return;
+
+    const nameCell = $(cells[1]);
+    const link = nameCell.find("a").first();
     if (!link.length) return;
 
-    const nameHref = link.attr("href") ?? "";
-    const rawName = link.text().trim();
-    if (!rawName) return;
-
-    // Extract last name (usually in <strong>) and first from the full text
-    const strong = link.find("strong").text().trim();
-    const lastName = strong || rawName.split(/\s+/).pop() ?? rawName;
-    const firstName = rawName
+    // Last name is in <b>, first name is the rest
+    const lastName = link.find("b").text().trim();
+    const fullText = link.text().trim();
+    // Remove title prefix (Mr/Ms/Mrs/Dr/Hon) and last name to get first name
+    const firstName = fullText
       .replace(/^(?:Mr|Ms|Mrs|Dr|Hon\.?)\s+/i, "")
       .replace(lastName, "")
       .trim();
 
-    // Party is often in the next <p> or sibling text
-    const container = $(el).closest("div, td, li");
-    const partyRaw = container
-      .find("p, span")
-      .filter((_, e) => /^(ALP|LIB|NAT|GWA|ONP|AJP|AC|LCWA|IND)/i.test($(e).text().trim()))
-      .first()
-      .text()
-      .trim()
-      .split(/[\s,]/)[0];
+    // Party: "Party: ALP" in the name cell text
+    const cellText = nameCell.text();
+    const partyMatch = cellText.match(/Party:\s*([A-Z]+)/i);
+    const partyCode = partyMatch?.[1]?.toUpperCase() ?? "IND";
 
-    // Electorate — look for a link to an electorate profile
-    const electorate = container
-      .find("a[href*='electorate']")
-      .first()
-      .text()
-      .trim() || null;
+    // Electorate from 3rd column link
+    const electorate = $(cells[2]).find("a").first().text().trim() || null;
 
-    // Unique ID from the name (WA Parliament has no numeric ID in member URLs)
-    const slug = `${lastName.toLowerCase().replace(/[^a-z]/g, "")}_${firstName.toLowerCase().replace(/[^a-z]/g, "")}`;
-    const id = `${parliamentId}_${slug}`;
+    // Use Lotus Notes image ID as unique identifier
+    const imgSrc = $(cells[0]).find("img").attr("src") ?? "";
+    const notesIdMatch = imgSrc.match(/\(MemberPics\)\/([A-F0-9]+)\//i);
+    const notesId = notesIdMatch?.[1]?.toLowerCase() ?? `${lastName}_${firstName}`.toLowerCase().replace(/\s+/g, "_");
+    const id = `${parliamentId}_${notesId}`;
 
     members.push({
       id,
@@ -87,7 +86,7 @@ function parseMemberList(html: string, parliamentId: "wa_la" | "wa_lc"): WAMembe
       name_display: `${firstName} ${lastName}`.trim(),
       name_first: firstName,
       name_last: lastName,
-      party_id: resolvePartyId(partyRaw || "IND"),
+      party_id: resolvePartyId(partyCode),
       electorate,
     });
   });
@@ -104,7 +103,8 @@ export async function syncWAMembers(db: ReturnType<typeof import("@supabase/supa
     ...p,
     jurisdiction: "wa",
   }));
-  const { error: partyErr } = await db.from("parties").upsert(parties, { onConflict: "id" });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: partyErr } = await (db as any).from("parties").upsert(parties, { onConflict: "id" });
   if (partyErr) throw new Error(`Party upsert failed: ${partyErr.message}`);
   console.log(`  Upserted ${parties.length} WA parties`);
 
@@ -115,7 +115,8 @@ export async function syncWAMembers(db: ReturnType<typeof import("@supabase/supa
     return;
   }
 
-  const { error: memberErr } = await db.from("members").upsert(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: memberErr } = await (db as any).from("members").upsert(
     members.map((m) => ({ ...m, is_active: true, scraped_at: new Date().toISOString() })),
     { onConflict: "id" }
   );
