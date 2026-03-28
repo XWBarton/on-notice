@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Footer } from "@/components/Footer";
 import { BrainrotProvider } from "@/context/BrainrotContext";
+import { HeaderLogo } from "@/components/HeaderLogo";
+import { Suspense } from "react";
 import Image from "next/image";
 
 export const metadata: Metadata = {
@@ -26,10 +28,14 @@ export default function RootLayout({
         <BrainrotProvider>
           <header className="border-b border-gray-200 bg-white">
             <div className="mx-auto max-w-3xl px-4 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-              <a href="/" className="flex items-center gap-2.5">
-                <Image src="/icon.svg" alt="On Notice" width={32} height={32} />
-                <span className="text-xl font-bold tracking-tight">On Notice</span>
-              </a>
+              <Suspense fallback={
+                <a href="/" className="flex items-center gap-2.5">
+                  <Image src="/icon.svg" alt="On Notice" width={32} height={32} />
+                  <span className="text-xl font-bold tracking-tight">On Notice</span>
+                </a>
+              }>
+                <HeaderLogo />
+              </Suspense>
               <nav className="flex gap-6 text-sm text-gray-600">
                 <a href="/calendar" className="hover:text-gray-900">Calendar</a>
                 <a href="/divisions" className="hover:text-gray-900">Divisions</a>
