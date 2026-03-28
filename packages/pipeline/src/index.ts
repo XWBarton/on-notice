@@ -24,7 +24,7 @@ import { upsertDivisions } from "./db/upsert-divisions";
 import { findParlViewVideo, questionTimeOffsets, fetchParlViewCaptions, fetchEventChunks, findChunkForTimecode, timecodeToSeconds } from "./scrapers/parlview";
 import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
-import { uploadEpisode, uploadClip, uploadChapters } from "./audio/uploader";
+import { uploadEpisode, uploadClip, uploadChapters, fetchMemberClips } from "./audio/uploader";
 import { buildQtTranscript, buildQtTranscriptFromParlViewCaptions } from "./audio/captions";
 import { extractTimestampsWithAI } from "./ai/timestamp-questions";
 import * as fs from "node:fs";
@@ -555,6 +555,15 @@ async function run() {
                 return aT - bT;
               });
 
+            // Fetch pre-recorded member name clips for real (non-dixer) questions
+            const askerMemberIds = [...new Set(
+              classifiedQuestions
+                .filter(q => !q.isDorothyDixer && q.askerMemberId)
+                .map(q => q.askerMemberId!)
+            )];
+            const memberClipPaths = await fetchMemberClips(askerMemberIds, workDir);
+            console.log(`  Member clips available: ${memberClipPaths.size}/${askerMemberIds.length}`);
+
             for (let i = 0; i < allSegmentInputs.length; i++) {
               const q = allSegmentInputs[i];
               const secFromQtStart = !q.isDorothyDixer
@@ -581,7 +590,7 @@ async function run() {
                 ministerName: qInfo?.ministerName ?? null,
                 startSec,
                 endSec,
-                introClipPath: undefined,
+                introClipPath: memberClipPaths.get(qInfo?.askerMemberId ?? "") ?? undefined,
                 includeInPodcast: !q.isDorothyDixer,
               });
             }

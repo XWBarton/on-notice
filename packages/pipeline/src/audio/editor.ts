@@ -119,9 +119,16 @@ export async function buildEpisode(
 
     // Only include in podcast episode if not excluded
     if (seg.includeInPodcast !== false) {
-      // Prepend TTS intro if available
+      // Prepend intro clip if available
       if (seg.introClipPath && fs.existsSync(seg.introClipPath)) {
         parts.push(seg.introClipPath);
+        const { stdout } = await execFileAsync("ffprobe", [
+          "-v", "quiet",
+          "-show_entries", "format=duration",
+          "-of", "csv=p=0",
+          seg.introClipPath,
+        ]);
+        episodePosSec += parseFloat(stdout.trim());
       }
       chapterStartSecs.set(seg.questionNumber, Math.round(episodePosSec));
       parts.push(segPath);
