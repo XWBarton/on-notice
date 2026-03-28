@@ -66,7 +66,7 @@ export function SupporterBar({ totalMonthly, supporterCount }: SupporterBarProps
           to keep it running.
         </p>
         <p className="mt-1.5 text-xs text-gray-400">
-          This site is still a work in progress, there may be some features that are a bit clunky.
+          This site is still a work in progress, there may be some features that are a bit clunky. Stuff is constantly being updated so things may change at any time.
         </p>
       </div>
     </div>
