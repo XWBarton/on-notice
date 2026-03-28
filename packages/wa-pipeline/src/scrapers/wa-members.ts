@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { WA_PARTIES, resolvePartyId } from "../config";
+import { db } from "../db/client";
 
 const BASE = "https://www.parliament.wa.gov.au";
 
@@ -97,7 +98,7 @@ function parseMemberList(html: string, parliamentId: "wa_la" | "wa_lc"): WAMembe
 /**
  * Upsert all WA parties and members into Supabase.
  */
-export async function syncWAMembers(db: ReturnType<typeof import("@supabase/supabase-js").createClient>) {
+export async function syncWAMembers() {
   // Upsert parties first
   const parties = Object.values(WA_PARTIES).map((p) => ({
     ...p,
