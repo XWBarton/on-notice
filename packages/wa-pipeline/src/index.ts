@@ -174,7 +174,7 @@ async function main() {
 
   // 1. Sync members
   console.log("Step 1: Syncing members...");
-  await syncWAMembers(db);
+  await syncWAMembers();
   if (membersOnly) { console.log("Members-only mode — done."); return; }
 
   // 2. Check for sitting day
