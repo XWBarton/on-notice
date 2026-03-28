@@ -118,20 +118,34 @@ async function run() {
 
       const rows = await fetchSpeechRows(q.gid, oaType as "representatives" | "senate").catch(() => []);
 
-      // First htype=12 row is the question; subsequent ones from the SAME minister are the answer.
-      // If the GID covers a broad topic section, later rows may be from the next questioner — stop there.
+      // First htype=12 row is the question; subsequent rows are the exchange (minister + interjectors + Speaker).
+      // If the GID covers a broad section, later rows may be from the next questioner — stop there.
       const speechRows = rows.filter((r) => r.htype === "12");
       const questionRow = speechRows[0];
+      const questionerKey = questionRow?.speaker
+        ? `${questionRow.speaker.first_name} ${questionRow.speaker.last_name}`
+        : null;
       const ministerKey = speechRows[1]?.speaker
         ? `${speechRows[1].speaker.first_name} ${speechRows[1].speaker.last_name}`
         : null;
-      // Only keep rows from the same minister; stop at any different speaker after the minister has spoken
+
+      // exchangeRows = all rows after the question until the next questioner starts
+      // (includes interjectors, Speaker calls for order, back-and-forths)
+      const allAfter = speechRows.slice(1);
+      const nextQIdx = allAfter.findIndex((r) => {
+        const key = r.speaker ? `${r.speaker.first_name} ${r.speaker.last_name}` : null;
+        return key !== ministerKey && key !== questionerKey &&
+          /\bmy\s+question\s+is\s+to\b/i.test(stripHtml(r.body ?? ""));
+      });
+      const exchangeRows = nextQIdx >= 0 ? allAfter.slice(0, nextQIdx) : allAfter;
+
+      // answerRows = minister-only rows, for clean answerText and minister name detection
       const answerRows = ministerKey
-        ? speechRows.slice(1).filter((r) => {
+        ? exchangeRows.filter((r) => {
             const key = r.speaker ? `${r.speaker.first_name} ${r.speaker.last_name}` : null;
             return key === ministerKey;
           })
-        : speechRows.slice(1);
+        : exchangeRows;
 
       questionsWithContent.push({
         ...q,
@@ -146,7 +160,7 @@ async function run() {
         ministerParty: answerRows[0]?.speaker?.party ?? q.ministerParty,
         questionText: questionRow?.body ? stripHtml(questionRow.body) : q.questionText,
         answerText: answerRows.map((r) => stripHtml(r.body ?? "")).filter(Boolean).join("\n\n"),
-        transcriptJson: buildTranscript(questionRow, answerRows),
+        transcriptJson: buildTranscript(questionRow, exchangeRows),
       });
     }
     console.log(`Enriched ${questionsWithContent.filter((q) => q.askerName).length} questions with speaker info`);
