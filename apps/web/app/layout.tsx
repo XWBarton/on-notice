@@ -5,6 +5,7 @@ import { BrainrotProvider } from "@/context/BrainrotContext";
 import { HeaderLogo } from "@/components/HeaderLogo";
 import { Suspense } from "react";
 import Image from "next/image";
+import { headers } from "next/headers";
 
 export const metadata: Metadata = {
   title: "On Notice — Australian Parliament Daily Feed",
@@ -17,11 +18,22 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const headersList = await headers();
+  const isWA = headersList.get("x-is-wa") === "1";
+
+  if (isWA) {
+    return (
+      <html lang="en">
+        <body>{children}</body>
+      </html>
+    );
+  }
+
   return (
     <html lang="en">
       <body>

@@ -10,6 +10,9 @@ import { syncWAMembers } from "./scrapers/wa-members";
 import { fetchQuestionsWithoutNotice } from "./scrapers/wa-gallery";
 import { fetchVideoMeta } from "./scrapers/wa-video";
 import { downloadHlsAudio } from "./audio/downloader";
+import { uploadEpisode } from "./audio/uploader";
+import { getAudioDuration } from "./audio/duration";
+import { summariseWAQuestion } from "./ai/summarise";
 import { WAParliamentId } from "./config";
 import * as path from "path";
 import * as os from "os";
@@ -222,10 +225,33 @@ async function main() {
       subject: q.subject,
       question_text: q.questionText,
       answer_text: q.answerText,
+      minister_name: q.minister || null,
     }, { onConflict: "sitting_day_id,question_number" });
     if (qErr) throw new Error(`Question upsert failed (Q${q.number}): ${qErr.message}`);
   }
   console.log(`  Stored ${allQuestions.length} questions`);
+
+  // 5b. AI summaries
+  console.log("\nStep 5b: Generating AI summaries...");
+  for (const q of allQuestions) {
+    if (!q.questionText && !q.answerText) continue;
+    try {
+      const summary = await summariseWAQuestion({
+        askerName: q.asker,
+        ministerName: q.minister,
+        subject: q.subject || null,
+        questionText: q.questionText,
+        answerText: q.answerText,
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (db as any).from("questions").update({ ai_summary: summary })
+        .eq("sitting_day_id", sittingDayId)
+        .eq("question_number", q.number);
+      console.log(`  Q${q.number}: summarised`);
+    } catch (err) {
+      console.warn(`  Q${q.number}: AI summary failed (non-fatal):`, err);
+    }
+  }
 
   // 6. Audio pipeline
   if (!skipAudio) {
@@ -245,9 +271,18 @@ async function main() {
       const audioPath = await downloadHlsAudio(meta.hlsUrl, outputDir, "qwn.mp3");
       console.log(`  Audio downloaded: ${audioPath}`);
 
-      // Update sitting day with audio source
-      await db.from("sitting_days").update({
+      const audioUrl = await uploadEpisode(audioPath, parliamentId, date);
+      console.log(`  Uploaded to R2: ${audioUrl}`);
+
+      const durationSec = await getAudioDuration(audioPath);
+      if (durationSec) console.log(`  Duration: ${Math.round(durationSec / 60)}m`);
+
+      // Update sitting day with audio URL and metadata
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (db as any).from("sitting_days").update({
         audio_source_url: meta.hlsUrl,
+        audio_url: audioUrl,
+        audio_duration_sec: durationSec,
         hansard_url: `${HANSARD_BASE}/hansard/daily/${CHAMBER_PATH[parliamentId]}/${date}/`,
         pipeline_status: "complete",
       }).eq("id", sittingDayId);
