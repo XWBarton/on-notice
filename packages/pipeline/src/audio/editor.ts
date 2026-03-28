@@ -25,7 +25,8 @@ export interface QuestionSegment {
   includeInPodcast?: boolean;
 }
 
-const BUFFER_SEC = 4; // seconds of padding before/after each question
+const PRE_BUFFER_SEC = 4;  // seconds of lead-in before each question (covers Speaker announcement)
+const POST_BUFFER_SEC = 1; // seconds of tail after each question (minimal bleed into next)
 
 /**
  * Cut a segment from the source audio file.
@@ -43,9 +44,9 @@ export async function cutSegment(
   // Pre-input -ss: fast container-level seek. The raw audio is a clean MP3 produced
   // by the downloader (ffmpeg re-encode), so timestamps always start at 0.
   await execFileAsync("ffmpeg", [
-    "-ss", String(Math.max(0, startSec - BUFFER_SEC)),
+    "-ss", String(Math.max(0, startSec - PRE_BUFFER_SEC)),
     "-i", sourcePath,
-    "-t", String(duration + BUFFER_SEC * 2),
+    "-t", String(duration + PRE_BUFFER_SEC + POST_BUFFER_SEC),
     "-acodec", "libmp3lame",
     "-ab", "64k",
     "-y",
@@ -133,7 +134,7 @@ export async function buildEpisode(
       chapterStartSecs.set(seg.questionNumber, Math.round(episodePosSec));
       parts.push(segPath);
       // Advance episode position by the clip duration (including pre+post buffer)
-      episodePosSec += (relEnd - relStart) + BUFFER_SEC * 2;
+      episodePosSec += (relEnd - relStart) + PRE_BUFFER_SEC + POST_BUFFER_SEC;
     }
   }
 
