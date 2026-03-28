@@ -214,7 +214,8 @@ async function main() {
   for (const q of allQuestions) {
     const askerLastName = q.asker.split(/\s+/).pop() ?? q.asker;
     const askerId = await resolveMemberId(askerLastName, parliamentId);
-    await db.from("questions").upsert({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: qErr } = await (db as any).from("questions").upsert({
       sitting_day_id: sittingDayId,
       question_number: q.number,
       asker_id: askerId,
@@ -222,6 +223,7 @@ async function main() {
       question_text: q.questionText,
       answer_text: q.answerText,
     }, { onConflict: "sitting_day_id,question_number" });
+    if (qErr) throw new Error(`Question upsert failed (Q${q.number}): ${qErr.message}`);
   }
   console.log(`  Stored ${allQuestions.length} questions`);
 
