@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useBrainrot } from "@/context/BrainrotContext";
 
 interface FeedNavProps {
@@ -27,19 +28,27 @@ export function FeedNav({ currentDate, currentParliament, availableDates }: Feed
       {/* Chamber toggle + brainrot toggle */}
       <div className="flex items-center gap-2">
         <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
-          {chambers.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => navigate(currentDate, c.id)}
-              className={`px-4 py-1.5 font-medium transition-colors ${
-                currentParliament === c.id
-                  ? c.activeClass
-                  : `bg-white ${c.hoverClass}`
-              }`}
-            >
-              {c.label}
-            </button>
-          ))}
+          {chambers.map((c) => {
+            const isActive = currentParliament === c.id;
+            const cls = "px-4 py-1.5 font-medium transition-colors";
+            if (isActive) {
+              return (
+                <span key={c.id} className={`${cls} ${c.activeClass}`}>
+                  {c.label}
+                </span>
+              );
+            }
+            return (
+              <Link
+                key={c.id}
+                href={`/${currentDate}?parliament=${c.id}`}
+                prefetch={true}
+                className={`${cls} bg-white ${c.hoverClass}`}
+              >
+                {c.label}
+              </Link>
+            );
+          })}
         </div>
 
         {unlocked && (
