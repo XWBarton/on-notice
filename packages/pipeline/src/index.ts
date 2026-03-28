@@ -598,8 +598,8 @@ async function run() {
                   : allAiMap.get(allSegmentInputs[i + 1].questionNumber)!)
                 : qtDuration;
               const aiEndSec = aiEndMap.get(q.questionNumber);
-              // Use AI end if it's credible: after start and before (or up to 30s past) the next question start
-              const useAiEnd = aiEndSec != null && aiEndSec > secFromQtStart && aiEndSec < nextSec + 30;
+              // Use AI end only if it's strictly before the next question starts (with 5s safety margin)
+              const useAiEnd = aiEndSec != null && aiEndSec > secFromQtStart && aiEndSec < nextSec - 5;
 
               const startSec = qtStartRec + secFromQtStart;
               const endSec = qtStartRec + (useAiEnd ? aiEndSec! : nextSec);
