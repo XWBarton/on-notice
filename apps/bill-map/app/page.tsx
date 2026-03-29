@@ -1,5 +1,5 @@
-import BillMap from "@/components/BillMap";
 import { fetchPolicies } from "@/lib/tvfy";
+import BillMapClient from "./BillMapClient";
 
 export const revalidate = 86400; // 24h — policies don't change often
 
@@ -17,5 +17,5 @@ export default async function Page({ searchParams }: Props) {
     // Graph still works without policies — nodes just won't be topic-coloured
   }
 
-  return <BillMap initialPolicies={initialPolicies} focus={focus ?? null} />;
+  return <BillMapClient initialPolicies={initialPolicies} focus={focus ?? null} />;
 }
