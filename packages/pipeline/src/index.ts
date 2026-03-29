@@ -96,9 +96,19 @@ async function run() {
   try {
     // ── Step 3: Parse debates from OpenAustralia ───────────────────────────────
     console.log("Step 3: Parsing debates...");
-    const { bills: allBills, questions: allQuestions, divisionTimes } = parseDebates(debateData);
+    const { bills: rawBills, questions: allQuestions, divisionTimes } = parseDebates(debateData);
 
-    console.log(`Parsed: ${allBills.length} bills, ${allQuestions.length} questions`);
+    // Deduplicate bills by (shortTitle, stage) — the same bill reading can appear in multiple
+    // Hansard sections (e.g. top-level and inside a BILLS container)
+    const seenBills = new Set<string>();
+    const allBills = rawBills.filter((b) => {
+      const key = `${b.shortTitle}||${b.stage}`;
+      if (seenBills.has(key)) return false;
+      seenBills.add(key);
+      return true;
+    });
+
+    console.log(`Parsed: ${allBills.length} bills (${rawBills.length} before dedup), ${allQuestions.length} questions`);
 
     // ── Step 3b: Enrich questions with full speech content from OA ─────────────
     console.log("Step 3b: Fetching individual speech content for questions...");
@@ -240,6 +250,9 @@ async function run() {
 
     // ── Step 6: AI enrichment ─────────────────────────────────────────────────
     console.log("Step 6: AI enrichment...");
+
+    // Clear stale bills before re-inserting (bill_number is not populated so upsert can't deduplicate)
+    await db.from("bills").delete().eq("sitting_day_id", sittingDayId);
 
     // Sequential to avoid Claude rate limits
     const enrichedBills: Array<{ title: string; party: string | null; summary: string | null }> = [];
