@@ -39,7 +39,7 @@ export function SupporterBar({ totalMonthly, supporterCount }: SupporterBarProps
           <span>
             <span
               onClick={handleCountClick}
-              className="font-semibold text-gray-700 select-none cursor-default"
+              className="font-semibold text-gray-700 select-none cursor-default p-3 -m-3"
             >
               {supporterCount}
             </span>{" "}
