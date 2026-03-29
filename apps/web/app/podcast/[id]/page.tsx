@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
 import { PartyBadge } from "@/components/Member/PartyBadge";
+import { PodcastPlayer, type Chapter } from "@/components/Podcast/PodcastPlayer";
 
 export default async function EpisodePage({
   params,
@@ -26,6 +27,22 @@ export default async function EpisodePage({
     .maybeSingle();
 
   if (!day) notFound();
+
+  // Fetch Podcasting 2.0 chapters if available
+  let chapters: Chapter[] = [];
+  const audioUrl: string | null = (day as any).audio_url ?? null;
+  if (audioUrl) {
+    const chaptersUrl = audioUrl.replace(/\/episode\.mp3$/, "/chapters.json");
+    try {
+      const res = await fetch(chaptersUrl, { next: { revalidate: 3600 } });
+      if (res.ok) {
+        const json = await res.json();
+        chapters = json.chapters ?? [];
+      }
+    } catch {
+      // No chapters available — continue without
+    }
+  }
 
   const { data: questions } = await supabase
     .from("questions")
@@ -53,15 +70,8 @@ export default async function EpisodePage({
         </p>
       </div>
 
-      {(day as any).audio_url ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <audio
-            controls
-            className="w-full"
-            src={(day as any).audio_url}
-            preload="metadata"
-          />
-        </div>
+      {audioUrl ? (
+        <PodcastPlayer audioUrl={audioUrl} chapters={chapters} />
       ) : (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-500">
           Audio processing in progress — check back soon.

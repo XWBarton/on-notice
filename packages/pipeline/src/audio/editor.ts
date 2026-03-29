@@ -41,12 +41,17 @@ export async function cutSegment(
   const duration = endSec - startSec;
   if (duration <= 0) throw new Error(`Invalid segment: ${startSec}→${endSec}`);
 
+  const totalDuration = duration + PRE_BUFFER_SEC + POST_BUFFER_SEC;
+  const FADE_SEC = 8;
+  const fadeStart = Math.max(0, totalDuration - FADE_SEC);
+
   // Pre-input -ss: fast container-level seek. The raw audio is a clean MP3 produced
   // by the downloader (ffmpeg re-encode), so timestamps always start at 0.
   await execFileAsync("ffmpeg", [
     "-ss", String(Math.max(0, startSec - PRE_BUFFER_SEC)),
     "-i", sourcePath,
-    "-t", String(duration + PRE_BUFFER_SEC + POST_BUFFER_SEC),
+    "-t", String(totalDuration),
+    "-af", `afade=t=out:st=${fadeStart}:d=${FADE_SEC}`,
     "-acodec", "libmp3lame",
     "-ab", "64k",
     "-y",
