@@ -268,7 +268,7 @@ async function main() {
     } else {
       const meta = await fetchVideoMeta(match.uuid);
       const outputDir = path.join(os.tmpdir(), `on-notice-wa-${date}-${parliamentId}`);
-      const audioPath = await downloadHlsAudio(meta.hlsUrl, outputDir, "qwn.mp3");
+      const audioPath = await downloadHlsAudio(meta.audioUrl, outputDir, "qwn.mp3");
       console.log(`  Audio downloaded: ${audioPath}`);
 
       const audioUrl = await uploadEpisode(audioPath, parliamentId, date);
