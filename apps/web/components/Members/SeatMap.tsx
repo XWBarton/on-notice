@@ -21,7 +21,7 @@ const PARTY_NORMALIZE: Record<string, { short_name: string; colour: string }> = 
   ALP: { short_name: "ALP", colour: "#D34547" },
   LIB: { short_name: "LIB", colour: "#2A4E97" },
   LIBERA: { short_name: "LIB", colour: "#2A4E97" },
-  LNP: { short_name: "L/NP", colour: "#244B77" },
+  LNP: { short_name: "LNP", colour: "#244B77" },
   NAT: { short_name: "NAT", colour: "#406D50" },
   NATION: { short_name: "NAT", colour: "#406D50" },
   GRN: { short_name: "GRN", colour: "#3B874A" },
@@ -269,7 +269,7 @@ export function SeatMap({ horMembers, senMembers }: SeatMapProps) {
                   <span className="text-gray-300"> · {hoveredMember.electorate}</span>
                 )}
                 {hoveredMember.parties && (
-                  <span className="text-gray-300"> · {hoveredMember.parties.short_name}</span>
+                  <span className="text-gray-300"> · {normalizeParty(hoveredMember.parties.short_name).short_name}</span>
                 )}
               </div>
             )}
