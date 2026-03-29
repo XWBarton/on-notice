@@ -109,7 +109,7 @@ export default async function DatePage({
         {digest && <DigestCard digest={digest} />}
 
         {questions && questions.length > 0 ? (
-          <QuestionSection questions={questions} />
+          <QuestionSection questions={questions} hansardUrl={sittingDay.hansard_url} />
         ) : questions !== null && (
           <section>
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Question Time</h2>

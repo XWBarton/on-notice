@@ -28,7 +28,7 @@ type Question = {
   } | null;
 };
 
-export function QuestionSection({ questions }: { questions: Question[] }) {
+export function QuestionSection({ questions, hansardUrl }: { questions: Question[]; hansardUrl?: string | null }) {
   const [showDixers, setShowDixers] = useState(false);
 
   const realQuestions = questions.filter((q) => !q.is_dorothy_dixer);
@@ -61,7 +61,7 @@ export function QuestionSection({ questions }: { questions: Question[] }) {
             {question.is_dorothy_dixer && (
               <p className="text-xs text-gray-400 mb-1 ml-1">Dorothy Dixer</p>
             )}
-            <QuestionCard question={question} />
+            <QuestionCard question={question} hansardUrl={hansardUrl} />
           </div>
         ))}
       </div>

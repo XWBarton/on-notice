@@ -10,11 +10,11 @@ import { format } from "date-fns";
 import { db } from "./db/client";
 import { PARLIAMENTS, FEDERAL_PARTIES } from "./config";
 import { syncFederalMembers } from "./scrapers/fed-members";
-import { fetchDebates, fetchSpeechRows } from "./scrapers/fed-hansard";
+import { fetchDebates, fetchSpeechRows, type OASpeechRow } from "./scrapers/fed-hansard";
 import { fetchDivisionsForDate } from "./scrapers/tvfy-divisions";
 import { parseDebates } from "./parsers/hansard-xml";
 import { classifyQuestion, resetMemberCache } from "./parsers/questions";
-import { buildTranscript } from "./parsers/transcript";
+import { buildTranscript, type TranscriptEntry } from "./parsers/transcript";
 import { summariseBill } from "./ai/summarise-bill";
 import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
@@ -82,6 +82,7 @@ async function run() {
         parliament_id: parliamentId,
         sitting_date: date,
         pipeline_status: "running",
+        hansard_url: `https://hansard.aph.gov.au/hansard/daily/${config.chamber === "lower" ? "Representatives" : "Senate"}/${date}/`,
       },
       { onConflict: "parliament_id,sitting_date" }
     )
@@ -122,45 +123,46 @@ async function run() {
       // If the GID covers a broad section, later rows may be from the next questioner — stop there.
       const speechRows = rows.filter((r) => r.htype === "12");
       const questionRow = speechRows[0];
-      const questionerKey = questionRow?.speaker
-        ? `${questionRow.speaker.first_name} ${questionRow.speaker.last_name}`
-        : null;
-      const ministerKey = speechRows[1]?.speaker
-        ? `${speechRows[1].speaker.first_name} ${speechRows[1].speaker.last_name}`
-        : null;
+      const speakerKey = (s: OASpeechRow["speaker"]) =>
+        (s?.first_name || s?.last_name) ? `${s.first_name ?? ""} ${s.last_name ?? ""}`.trim() : null;
+
+      const questionerKey = speakerKey(questionRow?.speaker);
 
       // exchangeRows = all rows after the question until the next questioner starts
-      // (includes interjectors, Speaker calls for order, back-and-forths)
       const allAfter = speechRows.slice(1);
       const nextQIdx = allAfter.findIndex((r) => {
-        const key = r.speaker ? `${r.speaker.first_name} ${r.speaker.last_name}` : null;
-        return key !== ministerKey && key !== questionerKey &&
+        const key = speakerKey(r.speaker);
+        return key !== questionerKey &&
           /\bmy\s+question\s+is\s+to\b/i.test(stripHtml(r.body ?? ""));
       });
       const exchangeRows = nextQIdx >= 0 ? allAfter.slice(0, nextQIdx) : allAfter;
 
-      // answerRows = minister-only rows, for clean answerText and minister name detection
+      // Build transcript first so we can derive the minister from it.
+      // This handles cases where speechRows[1] is a collective (e.g. "Opposition Members")
+      // with no valid speaker name — the minister may appear later in the exchange.
+      const transcriptJson = buildTranscript(questionRow, exchangeRows);
+      const ministerKey = (transcriptJson as TranscriptEntry[]).find(
+        (e) => e.type === "speech" && e.speaker && e.speaker !== questionerKey
+      )?.speaker ?? null;
+
+      // answerRows = minister-only rows, for clean answerText
       const answerRows = ministerKey
-        ? exchangeRows.filter((r) => {
-            const key = r.speaker ? `${r.speaker.first_name} ${r.speaker.last_name}` : null;
-            return key === ministerKey;
-          })
+        ? exchangeRows.filter((r) => speakerKey(r.speaker) === ministerKey)
         : exchangeRows;
+
+      // Find the minister's OA speaker record for party info
+      const ministerRow = answerRows.find((r) => speakerKey(r.speaker) === ministerKey);
 
       questionsWithContent.push({
         ...q,
-        askerName: questionRow?.speaker
-          ? `${questionRow.speaker.first_name} ${questionRow.speaker.last_name}`
-          : q.askerName,
+        askerName: speakerKey(questionRow?.speaker) ?? q.askerName,
         askerParty: questionRow?.speaker?.party ?? q.askerParty,
         askerConstituency: questionRow?.speaker?.constituency ?? null,
-        ministerName: (answerRows[0]?.speaker?.first_name && answerRows[0]?.speaker?.last_name)
-          ? `${answerRows[0].speaker.first_name} ${answerRows[0].speaker.last_name}`
-          : q.ministerName,
-        ministerParty: answerRows[0]?.speaker?.party ?? q.ministerParty,
+        ministerName: ministerKey ?? q.ministerName,
+        ministerParty: ministerRow?.speaker?.party ?? q.ministerParty,
         questionText: questionRow?.body ? stripHtml(questionRow.body) : q.questionText,
         answerText: answerRows.map((r) => stripHtml(r.body ?? "")).filter(Boolean).join("\n\n"),
-        transcriptJson: buildTranscript(questionRow, exchangeRows),
+        transcriptJson,
       });
     }
     console.log(`Enriched ${questionsWithContent.filter((q) => q.askerName).length} questions with speaker info`);

@@ -2,6 +2,8 @@
  * Dorothy Dixer detection and question enrichment.
  *
  * Primary rule: asker.party == minister.party AND minister is in government.
+ * Text fallback: asker is a government member + question addresses "the minister" — catches
+ *   cases where OpenAustralia returns no speaker metadata for the minister's response.
  * AI fallback: used only for ambiguous cases (crossbench, independents).
  */
 
@@ -86,6 +88,19 @@ export async function classifyQuestion(
       askerMemberId: asker?.id ?? null,
       ministerMemberId: minister?.id ?? null,
     };
+  }
+
+  // Fallback: if minister name is missing but asker is a government member and the question
+  // text addresses a government minister, it's almost certainly a dixer. This handles cases
+  // where OpenAustralia returns no speaker metadata for the minister's response.
+  if (!ministerName && askerParty && governmentParties.includes(askerParty)) {
+    if (/\bmy\s+question\s+is\s+to\s+the\b/i.test(questionText)) {
+      return {
+        isDorothyDixer: true,
+        askerMemberId: asker?.id ?? null,
+        ministerMemberId: null,
+      };
+    }
   }
 
   // Can't classify without at least asker info — skip AI

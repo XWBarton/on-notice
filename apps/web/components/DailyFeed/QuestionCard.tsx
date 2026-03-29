@@ -9,7 +9,7 @@ const PARTY_LOOKUP: Record<string, { short_name: string; colour: string }> = {
   // Normalised short names
   ALP:  { short_name: "ALP",  colour: "#D34547" },
   LIB:  { short_name: "LIB",  colour: "#2A4E97" },
-  LNP:  { short_name: "L/NP", colour: "#244B77" },
+  LNP:  { short_name: "LNP", colour: "#244B77" },
   NAT:  { short_name: "NAT",  colour: "#406D50" },
   GRN:  { short_name: "GRN",  colour: "#3B874A" },
   ON:   { short_name: "ON",   colour: "#E1733C" },
@@ -25,7 +25,7 @@ const PARTY_LOOKUP: Record<string, { short_name: string; colour: string }> = {
   "Liberal Party":          { short_name: "LIB", colour: "#2A4E97" },
   "Liberal":                { short_name: "LIB", colour: "#2A4E97" },
   "LIBERA":                 { short_name: "LIB", colour: "#2A4E97" },
-  "Liberal National Party": { short_name: "L/NP", colour: "#244B77" },
+  "Liberal National Party": { short_name: "LNP", colour: "#244B77" },
   "The Nationals":          { short_name: "NAT", colour: "#406D50" },
   "National Party":         { short_name: "NAT", colour: "#406D50" },
   "National Party of Australia": { short_name: "NAT", colour: "#406D50" },
@@ -34,6 +34,7 @@ const PARTY_LOOKUP: Record<string, { short_name: string; colour: string }> = {
   "Australian Greens":      { short_name: "GRN", colour: "#3B874A" },
   "Greens":                 { short_name: "GRN", colour: "#3B874A" },
   "Pauline Hanson's One Nation": { short_name: "ON", colour: "#E1733C" },
+  "Pauline Hanson's One Nation Party": { short_name: "ON", colour: "#E1733C" },
   "One Nation":             { short_name: "ON",  colour: "#E1733C" },
   "PAULIN":                 { short_name: "ON",  colour: "#E1733C" },
   "Independent":            { short_name: "IND", colour: "#757575" },
@@ -56,6 +57,7 @@ export interface TranscriptEntry {
 }
 
 interface QuestionCardProps {
+  hansardUrl?: string | null;
   question: {
     id: number;
     subject: string | null;
@@ -286,7 +288,7 @@ function AudioClipPlayer({ url }: { url: string }) {
   );
 }
 
-export function QuestionCard({ question }: QuestionCardProps) {
+export function QuestionCard({ question, hansardUrl }: QuestionCardProps) {
   const [expanded, setExpanded] = useState(false);
   const { active } = useBrainrot();
   const displaySummary = active && question.brainrot_summary ? question.brainrot_summary : question.ai_summary;
@@ -302,8 +304,9 @@ export function QuestionCard({ question }: QuestionCardProps) {
               {question.asker?.name_display ?? question.asker_name}
             </span>
             {(() => {
-              const raw = question.asker?.parties?.short_name ?? question.asker_party;
-              const p = partyBadgeProps(raw);
+              const p = question.asker?.parties
+                ? { short_name: question.asker.parties.short_name, colour_hex: question.asker.parties.colour_hex }
+                : partyBadgeProps(question.asker_party);
               return p ? <PartyBadge party={p} /> : null;
             })()}
             <span className="text-gray-400">→</span>
@@ -352,11 +355,17 @@ export function QuestionCard({ question }: QuestionCardProps) {
                   <TranscriptText text={question.question_text} />
                 </div>
               )}
-              {question.answer_text && (
+              {question.answer_text ? (
                 <div>
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Response</p>
                   <TranscriptText text={question.answer_text} />
                 </div>
+              ) : question.question_text && (
+                <p className="text-xs text-gray-400 italic">
+                  Response not fully captured by OpenAustralia.{hansardUrl && (
+                    <> <a href={hansardUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">View on Hansard</a></>
+                  )}
+                </p>
               )}
             </div>
           )}

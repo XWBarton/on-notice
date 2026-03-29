@@ -33,8 +33,8 @@ export function buildTranscript(
 }
 
 function parseRow(row: OASpeechRow, _role: string): TranscriptEntry[] {
-  const speaker = row.speaker
-    ? `${row.speaker.first_name} ${row.speaker.last_name}`.trim()
+  const speaker = (row.speaker?.first_name || row.speaker?.last_name)
+    ? `${row.speaker.first_name ?? ""} ${row.speaker.last_name ?? ""}`.trim()
     : null;
   const party = row.speaker?.party ?? null;
   const html = row.body ?? "";
