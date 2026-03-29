@@ -14,7 +14,7 @@ import { fetchDebates, fetchSpeechRows, type OASpeechRow } from "./scrapers/fed-
 import { fetchDivisionsForDate } from "./scrapers/tvfy-divisions";
 import { parseDebates } from "./parsers/hansard-xml";
 import { classifyQuestion, resetMemberCache } from "./parsers/questions";
-import { buildTranscript, type TranscriptEntry } from "./parsers/transcript";
+import { buildTranscript } from "./parsers/transcript";
 import { summariseBill } from "./ai/summarise-bill";
 import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
@@ -137,13 +137,20 @@ async function run() {
       });
       const exchangeRows = nextQIdx >= 0 ? allAfter.slice(0, nextQIdx) : allAfter;
 
-      // Build transcript first so we can derive the minister from it.
-      // This handles cases where speechRows[1] is a collective (e.g. "Opposition Members")
-      // with no valid speaker name — the minister may appear later in the exchange.
+      // Find the minister: the non-questioner speaker with the most body content in the exchange.
+      // Using content length is more reliable than position (speechRows[1] may be "Opposition Members")
+      // or transcript type (Speaker procedural calls aren't always in italic HTML).
+      const speakerContentMap = new Map<string, number>();
+      for (const row of exchangeRows) {
+        const key = speakerKey(row.speaker);
+        if (!key || key === questionerKey) continue;
+        const len = (row.body ?? "").replace(/<[^>]+>/g, "").trim().length;
+        speakerContentMap.set(key, (speakerContentMap.get(key) ?? 0) + len);
+      }
+      const ministerKey = [...speakerContentMap.entries()]
+        .sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
       const transcriptJson = buildTranscript(questionRow, exchangeRows);
-      const ministerKey = (transcriptJson as TranscriptEntry[]).find(
-        (e) => e.type === "speech" && e.speaker && e.speaker !== questionerKey
-      )?.speaker ?? null;
 
       // answerRows = minister-only rows, for clean answerText
       const answerRows = ministerKey
