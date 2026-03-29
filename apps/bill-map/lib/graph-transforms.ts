@@ -29,8 +29,10 @@ function normTitle(title: string): string {
 
 // Extract a bill title from a TVFY division name.
 // Division names often look like "Infrastructure Levy Bill 2024 — Second Reading"
+// or "Bills — Infrastructure Levy Bill 2024 — Second Reading"
 function billTitleFromDivision(divisionName: string): string {
   return divisionName
+    .replace(/^(bills?|documents?|committees?|motions?)\s*[—–-]\s*/i, "")
     .replace(/\s*[—–-]\s*(first|second|third)\s+reading.*/i, "")
     .replace(/\s*[—–-]\s*introduction.*/i, "")
     .replace(/\s*[—–-]\s*(consideration|passage|resumption|motion|concurrence).*/i, "")

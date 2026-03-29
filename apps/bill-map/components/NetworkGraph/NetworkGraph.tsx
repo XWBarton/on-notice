@@ -15,16 +15,23 @@ function nodeLabel(node: GraphNode): string {
   return node.type === "bill" ? node.shortTitle : node.name;
 }
 
+function divisionPassed(node: GraphNode & { type: "division" }): boolean {
+  const outcome = (node.outcome ?? "").toLowerCase();
+  if (outcome.includes("passed") || outcome === "aye" || outcome.includes("agreed")) return true;
+  if (outcome.includes("negatived") || outcome === "no" || outcome.includes("defeated")) return false;
+  // Fall back to vote counts
+  return node.ayeVotes > node.noVotes;
+}
+
 function nodeColor(node: GraphNode, topics: TopicCluster[]): string {
   if (node.topicId != null) {
     const topic = topics.find((t) => t.policyId === node.topicId);
     if (topic) return topic.color;
   }
   if (node.type === "division") {
-    const outcome = (node.outcome ?? "").toLowerCase();
-    return outcome.includes("passed") || outcome === "aye" ? "#22c55e" : "#ef4444";
+    return divisionPassed(node) ? "#16a34a" : "#dc2626";
   }
-  return "#9ca3af";
+  return "#6b7280";
 }
 
 export default function NetworkGraph({ nodes, edges, topics, selectedNodeId, onSelectNode }: Props) {
@@ -50,10 +57,20 @@ export default function NetworkGraph({ nodes, edges, topics, selectedNodeId, onS
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
   const drag = useRef<{ sx: number; sy: number; tx: number; ty: number } | null>(null);
 
-  const onWheel = useCallback((e: React.WheelEvent) => {
+  const onWheel = useCallback((e: React.WheelEvent<SVGSVGElement>) => {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.1 : 0.9;
-    setTransform((t) => ({ ...t, k: Math.max(0.25, Math.min(5, t.k * factor)) }));
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cursorX = e.clientX - rect.left;
+    const cursorY = e.clientY - rect.top;
+    setTransform((t) => {
+      const newK = Math.max(0.25, Math.min(5, t.k * factor));
+      return {
+        k: newK,
+        x: cursorX - (cursorX - t.x) * (newK / t.k),
+        y: cursorY - (cursorY - t.y) * (newK / t.k),
+      };
+    });
   }, []);
 
   const onMouseDown = useCallback(
@@ -155,7 +172,7 @@ export default function NetworkGraph({ nodes, edges, topics, selectedNodeId, onS
                   data-node="true"
                   transform={`translate(${pos.x},${pos.y})`}
                   style={{ cursor: "pointer" }}
-                  onClick={() => onSelectNode(selected ? null : node.id)}
+                  onClick={(e) => { e.stopPropagation(); onSelectNode(selected ? null : node.id); }}
                 >
                   <rect
                     x={-DIV_HALF} y={-DIV_HALF}
@@ -188,31 +205,31 @@ export default function NetworkGraph({ nodes, edges, topics, selectedNodeId, onS
                 data-node="true"
                 transform={`translate(${pos.x},${pos.y})`}
                 style={{ cursor: "pointer" }}
-                onClick={() => onSelectNode(selected ? null : node.id)}
+                onClick={(e) => { e.stopPropagation(); onSelectNode(selected ? null : node.id); }}
               >
                 <circle
                   r={BILL_R}
-                  fill="white"
+                  fill={color}
+                  fillOpacity={0.15}
                   stroke={selected ? "#111827" : color}
                   strokeWidth={selected ? 2.5 : 1.5}
                 />
-                {/* Stage progress dots */}
-                {(["intro", "1st", "2nd", "3rd"] as const).map((_, i) => (
-                  <circle
-                    key={i}
-                    cx={-6 + i * 4}
-                    cy={BILL_R - 5}
-                    r={1.8}
-                    fill={color}
-                    fillOpacity={0.7}
-                    style={{ pointerEvents: "none" }}
-                  />
-                ))}
                 <text
-                  y={BILL_R + 13}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize={8}
+                  fontWeight="600"
+                  fill={color}
+                  style={{ pointerEvents: "none" }}
+                >
+                  {node.divisionIds?.length ?? 0}
+                </text>
+                <text
+                  y={BILL_R + 11}
                   textAnchor="middle"
                   fontSize={9}
-                  fill="#374151"
+                  fill={selected ? "#111827" : "#374151"}
+                  fontWeight={selected ? "600" : "400"}
                   style={{ pointerEvents: "none" }}
                 >
                   {shortLabel}
@@ -222,6 +239,23 @@ export default function NetworkGraph({ nodes, edges, topics, selectedNodeId, onS
           })}
         </g>
       </svg>
+
+      {/* Zoom controls */}
+      <div className="absolute bottom-4 right-4 flex flex-col gap-1">
+        <button
+          className="w-8 h-8 bg-white border border-gray-300 rounded text-gray-600 text-lg leading-none hover:bg-gray-50 shadow-sm"
+          onClick={() => setTransform((t) => ({ ...t, k: Math.min(5, t.k * 1.3) }))}
+        >+</button>
+        <button
+          className="w-8 h-8 bg-white border border-gray-300 rounded text-gray-600 text-lg leading-none hover:bg-gray-50 shadow-sm"
+          onClick={() => setTransform((t) => ({ ...t, k: Math.max(0.25, t.k / 1.3) }))}
+        >−</button>
+        <button
+          className="w-8 h-8 bg-white border border-gray-300 rounded text-gray-500 text-xs leading-none hover:bg-gray-50 shadow-sm"
+          onClick={() => setTransform({ x: 0, y: 0, k: 1 })}
+          title="Reset view"
+        >⌂</button>
+      </div>
 
       {nodes.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
