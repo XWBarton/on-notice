@@ -117,12 +117,12 @@ export function buildGraph(
       id: `division::${div.id}`,
       type: "division",
       tvfyId: div.id,
-      name: div.name,
+      name: div.name ?? "",
       date: div.date,
       house: div.house,
-      outcome: div.outcome,
-      ayeVotes: div.aye_votes,
-      noVotes: div.no_votes,
+      outcome: div.outcome ?? "",
+      ayeVotes: div.aye_votes ?? 0,
+      noVotes: div.no_votes ?? 0,
       topicId,
     };
     nodes.push(divNode);

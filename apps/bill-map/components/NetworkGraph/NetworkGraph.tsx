@@ -21,7 +21,7 @@ function nodeColor(node: GraphNode, topics: TopicCluster[]): string {
     if (topic) return topic.color;
   }
   if (node.type === "division") {
-    const outcome = node.outcome.toLowerCase();
+    const outcome = (node.outcome ?? "").toLowerCase();
     return outcome.includes("passed") || outcome === "aye" ? "#22c55e" : "#ef4444";
   }
   return "#9ca3af";
