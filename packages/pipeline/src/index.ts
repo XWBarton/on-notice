@@ -13,7 +13,7 @@ import { syncFederalMembers } from "./scrapers/fed-members";
 import { fetchDebates, fetchDebatesXml, fetchSpeechRows, type OASpeechRow } from "./scrapers/fed-hansard";
 import { fetchDivisionsForDate } from "./scrapers/tvfy-divisions";
 import { parseDebates, parseDebatesXml } from "./parsers/hansard-xml";
-import { classifyQuestion, getMemberPartyLookup, resetMemberCache } from "./parsers/questions";
+import { classifyQuestion, getMemberLookup, resetMemberCache } from "./parsers/questions";
 import { buildTranscript, buildTranscriptFromExchange } from "./parsers/transcript";
 import { summariseBill } from "./ai/summarise-bill";
 import { summariseQuestion } from "./ai/summarise-question";
@@ -136,19 +136,24 @@ async function run() {
       .replace(/&#\d+;/g, " ")
       .replace(/\s+/g, " ").trim();
 
-    // Pre-load member cache once — used for party lookup in XML path
-    const lookupParty = await getMemberPartyLookup(parliamentId);
+    // Pre-load member lookup once — used for party/display name resolution in XML path
+    const xmlMemberLookup = await getMemberLookup(parliamentId);
 
     const questionsWithContent = [];
     for (const q of allQuestions) {
       // ── XML path: full content + interjections already parsed ────────────────
       if (q.exchange) {
+        const lookupParty = (name: string) => xmlMemberLookup(name).partyShortName;
         const transcriptJson = buildTranscriptFromExchange(q.exchange, lookupParty);
+        const askerInfo = q.askerName ? xmlMemberLookup(q.askerName) : null;
+        const ministerInfo = q.ministerName ? xmlMemberLookup(q.ministerName) : null;
         questionsWithContent.push({
           ...q,
-          askerParty: q.askerName ? lookupParty(q.askerName) : null,
+          askerName: askerInfo?.displayName ?? q.askerName,
+          askerParty: askerInfo?.partyShortName ?? null,
           askerConstituency: q.exchange.find((e) => e.speakerName === q.askerName)?.electorate ?? null,
-          ministerParty: q.ministerName ? lookupParty(q.ministerName) : null,
+          ministerName: ministerInfo?.displayName ?? q.ministerName,
+          ministerParty: ministerInfo?.partyShortName ?? null,
           transcriptJson,
         });
         continue;

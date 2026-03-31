@@ -43,18 +43,59 @@ export function resetMemberCache() {
 }
 
 /**
- * Returns a party-lookup function backed by the member cache.
- * Accepts raw rewritexml speaker names like "Senator GHOSH" or "The PRESIDENT".
- * Call once before processing questions; the cache is shared with classifyQuestion.
+ * Parse a raw rewritexml speaker name into first/last name components.
+ * "Senator CASH"          → { firstName: null,     lastName: "CASH" }
+ * "Senator BARBARA POCOCK" → { firstName: "BARBARA", lastName: "POCOCK" }
+ * "The PRESIDENT"         → { firstName: null,     lastName: "PRESIDENT" }
  */
-export async function getMemberPartyLookup(
-  parliamentId: string
-): Promise<(speakerName: string) => string | null> {
-  const cache = await getMemberCache(parliamentId);
-  return (speakerName: string) => {
-    const lastName = extractLastName(speakerName);
-    const candidates = cache.get(normalise(lastName));
-    return candidates?.[0]?.party_id ?? null;
+function parseXmlSpeakerName(raw: string): { firstName: string | null; lastName: string } {
+  const withoutTitle = raw.replace(/^(Senator|The|Member)\s+/i, "").trim();
+  const parts = withoutTitle.split(/\s+/);
+  if (parts.length <= 1) return { firstName: null, lastName: parts[0] ?? raw };
+  return { firstName: parts.slice(0, -1).join(" "), lastName: parts[parts.length - 1] };
+}
+
+/**
+ * Returns a lookup function that resolves raw rewritexml speaker names
+ * (e.g. "Senator BARBARA POCOCK") to party short_name and display name.
+ * Uses a fresh DB query so party short_names come from the parties table directly.
+ */
+export async function getMemberLookup(parliamentId: string): Promise<
+  (rawSpeakerName: string) => { partyShortName: string | null; displayName: string | null }
+> {
+  const { data } = await db
+    .from("members")
+    .select("name_last, name_first, parties(short_name)")
+    .eq("parliament_id", parliamentId);
+
+  type Entry = { name_first: string | null; displayName: string; partyShortName: string | null };
+  const byLastName = new Map<string, Entry[]>();
+
+  for (const m of data ?? []) {
+    const key = normalise(m.name_last);
+    const existing = byLastName.get(key) ?? [];
+    existing.push({
+      name_first: m.name_first ?? null,
+      displayName: [m.name_first, m.name_last].filter(Boolean).join(" "),
+      partyShortName: (m.parties as unknown as { short_name: string } | null)?.short_name ?? null,
+    });
+    byLastName.set(key, existing);
+  }
+
+  return (rawSpeakerName: string) => {
+    const { firstName, lastName } = parseXmlSpeakerName(rawSpeakerName);
+    const candidates = byLastName.get(normalise(lastName));
+    if (!candidates || candidates.length === 0) return { partyShortName: null, displayName: null };
+
+    // Disambiguate by first name when multiple members share a last name
+    if (candidates.length > 1 && firstName) {
+      const match = candidates.find((c) =>
+        c.name_first?.toLowerCase().startsWith(firstName.toLowerCase().slice(0, 3)) ?? false
+      );
+      if (match) return { partyShortName: match.partyShortName, displayName: match.displayName };
+    }
+
+    return { partyShortName: candidates[0].partyShortName, displayName: candidates[0].displayName };
   };
 }
 
