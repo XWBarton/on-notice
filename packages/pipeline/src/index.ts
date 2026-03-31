@@ -104,11 +104,18 @@ async function run() {
     });
     if (xmlText) {
       const xmlResult = parseDebatesXml(xmlText);
-      if (xmlResult.questions.length > 0 || xmlResult.bills.length > 0) {
+      if (xmlResult.questions.length > 0) {
         parseResult = xmlResult;
       } else {
-        console.warn("  Rewritexml parsed empty — falling back to JSON API");
-        parseResult = parseDebates(debateData);
+        // XML had no questions (may have bills) — fall back to JSON API for questions;
+        // merge XML bills in case JSON API misses any.
+        console.warn("  Rewritexml had no questions — falling back to JSON API");
+        const jsonResult = parseDebates(debateData);
+        parseResult = {
+          questions: jsonResult.questions,
+          bills: xmlResult.bills.length > 0 ? xmlResult.bills : jsonResult.bills,
+          divisionTimes: xmlResult.divisionTimes.length > 0 ? xmlResult.divisionTimes : jsonResult.divisionTimes,
+        };
       }
     } else {
       console.log("  Using JSON API data");

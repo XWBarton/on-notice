@@ -246,6 +246,7 @@ export function parseDebatesXml(xmlText_: string): {
       ignoreAttributes: false,
       attributeNamePrefix: "@_",
       parseAttributeValue: false,
+      maxNestedTags: 2000,
     });
     parsed = parser.parse(xmlText_) as XmlChild[];
   } catch (e) {
