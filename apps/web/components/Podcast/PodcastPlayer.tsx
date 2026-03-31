@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect } from "react";
 
 export interface Chapter {
   startTime: number;
@@ -11,6 +11,15 @@ export interface Chapter {
 interface PodcastPlayerProps {
   audioUrl: string;
   chapters: Chapter[];
+  parliamentId?: string;
+}
+
+// House of Representatives: green; Senate: red
+function getAccent(parliamentId?: string) {
+  if (parliamentId === "fed_sen") {
+    return { bg: "#b91c1c", bgHover: "#991b1b", light: "#fef2f2", border: "#fecaca", text: "#b91c1c", active: "#7f1d1d" };
+  }
+  return { bg: "#15803d", bgHover: "#166534", light: "#f0fdf4", border: "#bbf7d0", text: "#15803d", active: "#14532d" };
 }
 
 function formatTime(sec: number) {
@@ -21,7 +30,7 @@ function formatTime(sec: number) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-export function PodcastPlayer({ audioUrl, chapters }: PodcastPlayerProps) {
+export function PodcastPlayer({ audioUrl, chapters, parliamentId }: PodcastPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressRef = useRef<HTMLDivElement | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -29,6 +38,8 @@ export function PodcastPlayer({ audioUrl, chapters }: PodcastPlayerProps) {
   const [duration, setDuration] = useState(0);
   const [buffered, setBuffered] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  const accent = getAccent(parliamentId);
 
   const activeIndex = chapters.reduce((best, ch, i) => {
     return ch.startTime <= currentTime ? i : best;
@@ -61,11 +72,8 @@ export function PodcastPlayer({ audioUrl, chapters }: PodcastPlayerProps) {
   function toggle() {
     const audio = audioRef.current;
     if (!audio) return;
-    if (playing) {
-      audio.pause();
-    } else {
-      audio.play();
-    }
+    if (playing) audio.pause();
+    else audio.play();
   }
 
   function skip(secs: number) {
@@ -86,7 +94,7 @@ export function PodcastPlayer({ audioUrl, chapters }: PodcastPlayerProps) {
     const bar = progressRef.current;
     if (!bar || !duration) return;
     const rect = bar.getBoundingClientRect();
-    const ratio = (e.clientX - rect.left) / rect.width;
+    const ratio = Math.max(0, Math.min((e.clientX - rect.left) / rect.width, 1));
     seekTo(ratio * duration);
   }
 
@@ -95,85 +103,88 @@ export function PodcastPlayer({ audioUrl, chapters }: PodcastPlayerProps) {
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-      {/* Player controls */}
-      <div className="px-5 py-4 space-y-3">
-        {/* Progress bar */}
-        <div
-          ref={progressRef}
-          onClick={handleProgressClick}
-          className="relative h-2 bg-gray-100 rounded-full cursor-pointer group"
-        >
-          {/* Buffered */}
+      <div className="px-5 pt-5 pb-4 space-y-4">
+
+        {/* Progress bar + time */}
+        <div className="space-y-1.5">
           <div
-            className="absolute inset-y-0 left-0 bg-gray-200 rounded-full transition-all"
-            style={{ width: `${bufferedPct}%` }}
-          />
-          {/* Played */}
-          <div
-            className="absolute inset-y-0 left-0 bg-blue-500 rounded-full transition-all"
-            style={{ width: `${progress}%` }}
-          />
-          {/* Thumb */}
-          <div
-            className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-blue-500 rounded-full shadow -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ left: `${progress}%` }}
-          />
+            ref={progressRef}
+            onClick={handleProgressClick}
+            className="relative h-1.5 bg-gray-100 rounded-full cursor-pointer group"
+          >
+            <div
+              className="absolute inset-y-0 left-0 bg-gray-200 rounded-full"
+              style={{ width: `${bufferedPct}%` }}
+            />
+            <div
+              className="absolute inset-y-0 left-0 rounded-full transition-[width]"
+              style={{ width: `${progress}%`, backgroundColor: accent.bg }}
+            />
+            <div
+              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full shadow -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ left: `${progress}%`, backgroundColor: accent.bg }}
+            />
+          </div>
+          <div className="flex items-center justify-between text-xs font-mono text-gray-400">
+            <span>{formatTime(currentTime)}</span>
+            <span>{duration > 0 ? formatTime(duration) : "--:--"}</span>
+          </div>
         </div>
 
-        {/* Time labels */}
-        <div className="flex items-center justify-between text-xs text-gray-400 font-mono -mt-1">
-          <span>{formatTime(currentTime)}</span>
-          <span>{duration > 0 ? formatTime(duration) : "--:--"}</span>
-        </div>
-
-        {/* Buttons */}
-        <div className="flex items-center justify-center gap-3">
+        {/* Controls */}
+        <div className="flex items-center justify-center gap-6">
+          {/* Rewind 30s */}
           <button
             onClick={() => skip(-30)}
             title="Rewind 30 seconds"
-            className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-blue-600 transition-colors p-2 rounded-lg hover:bg-blue-50"
+            className="flex flex-col items-center gap-1 transition-opacity hover:opacity-70"
+            style={{ color: accent.text }}
           >
-            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1 4v6h6" />
-              <path d="M3.51 15a9 9 0 1 0 .49-3.56" />
-              <text x="7.5" y="14.5" fontSize="5.5" fontWeight="700" fill="currentColor" stroke="none" textAnchor="middle">30</text>
+            <svg className="w-7 h-7" viewBox="0 0 28 28" fill="none">
+              <path d="M14 5.5A8.5 8.5 0 1 0 22.5 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              <path d="M14 5.5L11 2.5M14 5.5L17 2.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <text x="14" y="16.5" fontSize="6" fontWeight="700" fill="currentColor" textAnchor="middle" fontFamily="system-ui">30</text>
             </svg>
-            <span className="text-[10px] font-medium">-30s</span>
+            <span className="text-[10px] font-medium tracking-wide">rewind</span>
           </button>
 
+          {/* Play / Pause */}
           <button
             onClick={toggle}
             title={playing ? "Pause" : "Play"}
-            className="w-12 h-12 flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-md transition-all active:scale-95"
+            className="w-14 h-14 flex items-center justify-center rounded-full shadow-md text-white transition-all active:scale-95"
+            style={{ backgroundColor: playing ? accent.bgHover : accent.bg }}
           >
             {loading ? (
               <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
               </svg>
             ) : playing ? (
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="4" width="4" height="16" rx="1" />
-                <rect x="14" y="4" width="4" height="16" rx="1" />
+              <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                <rect x="5" y="3" width="3.5" height="14" rx="1"/>
+                <rect x="11.5" y="3" width="3.5" height="14" rx="1"/>
               </svg>
             ) : (
-              <svg className="w-5 h-5 translate-x-0.5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M5 3l14 9-14 9V3z" />
+              <svg className="w-5 h-5 translate-x-0.5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M4.5 3.5l12 6.5-12 6.5V3.5z"/>
               </svg>
             )}
           </button>
 
+          {/* Skip 30s */}
           <button
             onClick={() => skip(30)}
             title="Skip 30 seconds"
-            className="flex flex-col items-center gap-0.5 text-gray-500 hover:text-blue-600 transition-colors p-2 rounded-lg hover:bg-blue-50"
+            className="flex flex-col items-center gap-1 transition-opacity hover:opacity-70"
+            style={{ color: accent.text }}
           >
-            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M23 4v6h-6" />
-              <path d="M20.49 15a9 9 0 1 1-.49-3.56" />
-              <text x="12" y="14.5" fontSize="5.5" fontWeight="700" fill="currentColor" stroke="none" textAnchor="middle">30</text>
+            <svg className="w-7 h-7" viewBox="0 0 28 28" fill="none">
+              <path d="M14 5.5A8.5 8.5 0 1 1 5.5 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              <path d="M14 5.5L11 2.5M14 5.5L17 2.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <text x="14" y="16.5" fontSize="6" fontWeight="700" fill="currentColor" textAnchor="middle" fontFamily="system-ui">30</text>
             </svg>
-            <span className="text-[10px] font-medium">+30s</span>
+            <span className="text-[10px] font-medium tracking-wide">skip</span>
           </button>
         </div>
       </div>
@@ -181,21 +192,22 @@ export function PodcastPlayer({ audioUrl, chapters }: PodcastPlayerProps) {
       {/* Chapter list */}
       {chapters.length > 0 && (
         <div className="border-t border-gray-100">
-          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+          <div className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
             Chapters
           </div>
-          <div className="max-h-64 overflow-y-auto">
+          <div className="max-h-60 overflow-y-auto divide-y divide-gray-50">
             {chapters.map((ch, i) => (
               <button
                 key={i}
                 onClick={() => seekTo(ch.startTime)}
-                className={`w-full text-left flex items-baseline gap-3 px-4 py-2 text-sm transition-colors ${
+                className="w-full text-left flex items-center gap-3 px-5 py-2.5 text-sm transition-colors"
+                style={
                   i === activeIndex
-                    ? "bg-blue-50 text-blue-800 border-l-2 border-blue-500"
-                    : "text-gray-600 hover:bg-gray-50 border-l-2 border-transparent"
-                }`}
+                    ? { backgroundColor: accent.light, borderLeft: `3px solid ${accent.bg}`, color: accent.active }
+                    : { borderLeft: "3px solid transparent", color: "#4b5563" }
+                }
               >
-                <span className="shrink-0 font-mono text-xs text-gray-400 w-10 text-right">
+                <span className="shrink-0 font-mono text-xs w-10 text-right" style={{ color: i === activeIndex ? accent.text : "#9ca3af" }}>
                   {formatTime(ch.startTime)}
                 </span>
                 <span className={i === activeIndex ? "font-medium" : ""}>{ch.title}</span>
