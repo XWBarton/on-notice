@@ -27,7 +27,7 @@ import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { uploadEpisode, uploadClip, uploadChapters, fetchMemberClips } from "./audio/uploader";
 import { buildQtTranscript, buildQtTranscriptFromParlViewCaptions } from "./audio/captions";
 import { extractTimestampsWithAI } from "./ai/timestamp-questions";
-import { recoverMissingQuestions } from "./ai/recover-missing-questions";
+import { identifyMissingQuestioners, extractQuestionFromCaptions } from "./ai/recover-missing-questions";
 import * as fs from "node:fs";
 
 async function run() {
@@ -212,31 +212,46 @@ async function run() {
               );
 
               if (speakerCallTranscript) {
-                // Build a condensed raw-captions text for the QT window so Claude can
-                // read question/answer text (limit to ~20 000 chars to stay within budget)
                 const qtStartSec = timecodeToSeconds(qtSegment.segmentIn);
                 const qtEndSec   = timecodeToSeconds(qtSegment.segmentOut);
-                const rawLines: string[] = [];
-                for (const c of earlyParlViewCaptions) {
-                  const sec = timecodeToSeconds(c.In);
-                  if (sec < qtStartSec || sec > qtEndSec) continue;
-                  rawLines.push(`T+${Math.round(sec - qtStartSec)}s: ${c.Text.replace(/\s+/g, " ").trim()}`);
-                }
-                const rawQtText = rawLines.join("\n").slice(0, 20000);
 
                 const knownQuestions = questionsWithContent.map((q) => ({
                   askerName: q.askerName,
                   subject: q.subject,
                 }));
 
-                const recovered = await recoverMissingQuestions(
+                // Step 1: identify missing questioners + their approximate timestamps
+                // from the small speaker-call filtered transcript (no token budget issue)
+                const missingQuestioners = await identifyMissingQuestioners(
                   speakerCallTranscript,
-                  rawQtText,
                   knownQuestions
                 ).catch((e) => {
-                  console.warn(`  Recovery extraction failed: ${e.message}`);
+                  console.warn(`  Missing questioner detection failed: ${e.message}`);
                   return [];
                 });
+
+                // Step 2: for each missing questioner, extract a targeted ~7-minute
+                // window of raw captions around their start time and recover the full Q&A.
+                // This avoids the truncation problem of sending the entire QT as one blob.
+                const recovered = [];
+                for (const mq of missingQuestioners) {
+                  const windowStart = qtStartSec + mq.approxStartSec - 60;  // 1 min lead
+                  const windowEnd   = qtStartSec + mq.approxStartSec + 420; // 7 min after
+                  const windowLines: string[] = [];
+                  for (const c of earlyParlViewCaptions) {
+                    const sec = timecodeToSeconds(c.In);
+                    if (sec < windowStart || sec > windowEnd) continue;
+                    windowLines.push(`T+${Math.round(sec - qtStartSec)}s: ${c.Text.replace(/\s+/g, " ").trim()}`);
+                  }
+                  const windowText = windowLines.join("\n");
+                  const extracted = await extractQuestionFromCaptions(mq.name, windowText).catch((e) => {
+                    console.warn(`  Extraction failed for ${mq.name}: ${e.message}`);
+                    return null;
+                  });
+                  if (extracted) {
+                    recovered.push({ ...extracted, askerName: mq.name, afterAskerName: mq.afterAskerName });
+                  }
+                }
 
                 if (recovered.length > 0) {
                   console.log(`  OA missed ${recovered.length} question(s) — recovering from captions:`);
