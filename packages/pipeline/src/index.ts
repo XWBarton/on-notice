@@ -795,10 +795,23 @@ async function run() {
                 .filter((s) => s.includeInPodcast !== false && chapterStartSecs.has(s.questionNumber))
                 .map((s) => {
                   const qInfo = classifiedQuestions.find((cq) => cq.questionNumber === s.questionNumber);
+                  const askerPartyShort = qInfo?.askerParty ? (FEDERAL_PARTIES[qInfo.askerParty]?.short_name ?? qInfo.askerParty) : null;
+                  const ministerPartyShort = qInfo?.ministerParty ? (FEDERAL_PARTIES[qInfo.ministerParty]?.short_name ?? qInfo.ministerParty) : null;
+                  const askerLabel = qInfo?.askerName
+                    ? (askerPartyShort ? `${qInfo.askerName} (${askerPartyShort})` : qInfo.askerName)
+                    : null;
+                  const ministerLabel = qInfo?.ministerName
+                    ? (ministerPartyShort ? `${qInfo.ministerName} (${ministerPartyShort})` : qInfo.ministerName)
+                    : null;
+                  const prefix = askerLabel && ministerLabel
+                    ? `${askerLabel} → ${ministerLabel}: `
+                    : askerLabel
+                      ? `${askerLabel}: `
+                      : "";
                   return {
                     startTime: chapterStartSecs.get(s.questionNumber)!,
                     title: qInfo?.subject
-                      ? `Q${s.questionNumber}: ${qInfo.subject}`
+                      ? `Q${s.questionNumber}: ${prefix}${qInfo.subject}`
                       : `Question ${s.questionNumber}`,
                     url: `${siteUrl}/${date}?parliament=${parliamentId}#q${s.questionNumber}`,
                   };
