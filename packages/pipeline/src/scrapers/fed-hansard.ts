@@ -107,7 +107,7 @@ export async function fetchDebatesXml(
   date: string,
   type: "representatives" | "senate"
 ): Promise<string | null> {
-  const subdir = type === "senate" ? "senate_debates" : "debates";
+  const subdir = type === "senate" ? "senate_debates" : "representatives_debates";
   const url = `http://data.openaustralia.org.au/rewritexml/${subdir}/${date}.xml`;
 
   let res: Response | null = null;
