@@ -103,7 +103,13 @@ async function run() {
       return null;
     });
     if (xmlText) {
-      parseResult = parseDebatesXml(xmlText);
+      const xmlResult = parseDebatesXml(xmlText);
+      if (xmlResult.questions.length > 0 || xmlResult.bills.length > 0) {
+        parseResult = xmlResult;
+      } else {
+        console.warn("  Rewritexml parsed empty — falling back to JSON API");
+        parseResult = parseDebates(debateData);
+      }
     } else {
       console.log("  Using JSON API data");
       parseResult = parseDebates(debateData);
