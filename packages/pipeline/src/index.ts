@@ -191,6 +191,8 @@ async function run() {
     // into questionsWithContent so they flow through classification + AI steps.
     let parlviewVideoEarly: import("./scrapers/parlview").ParlViewVideo | null = null;
     let earlyParlViewCaptions: import("./scrapers/parlview").ParlViewCaption[] | null = null;
+    // Tracks asker names of questions recovered from captions so step 6 can set source_note
+    const recoveredAskerNames = new Set<string>();
 
     if (config.questionTimeChamber) {
       console.log("Step 3c: Checking ParlView captions for questions missed by OA...");
@@ -252,11 +254,11 @@ async function run() {
                       insertAt = 0; // before all others
                     }
 
+                    recoveredAskerNames.add(rq.askerName);
                     questionsWithContent.splice(insertAt, 0, {
                       questionNumber: 0, // renumbered below
                       askerName: rq.askerName,
                       askerParty: null,
-                      askerConstituency: null,
                       ministerName: rq.ministerName,
                       ministerParty: null,
                       subject: rq.subject,
@@ -265,7 +267,6 @@ async function run() {
                       hansardTime: null,
                       gid: null,
                       transcriptJson: null,
-                      source_note: "Transcript derived from ParlView closed captions — not yet indexed by OpenAustralia Hansard.",
                     });
                   }
 
@@ -436,7 +437,9 @@ async function run() {
           ai_summary: aiSummary,
           brainrot_summary: brainrotSummary,
           transcript_json: q.transcriptJson ?? null,
-          source_note: (q as { source_note?: string }).source_note ?? null,
+          source_note: recoveredAskerNames.has(q.askerName ?? "")
+            ? "Transcript derived from ParlView closed captions — not yet indexed by OpenAustralia Hansard."
+            : null,
           asker_name: q.askerName,
           asker_party: q.askerParty ? (FEDERAL_PARTIES[q.askerParty]?.short_name ?? q.askerParty) : null,
           minister_name: q.ministerName,
