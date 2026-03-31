@@ -2,9 +2,9 @@ name: Nightly Pipeline
 
 on:
   schedule:
-    # 3:30am AWST Mon–Fri = 19:30 UTC Sun–Thu
-    # Pipeline retries video discovery every hour until 7:30am AWST if no video found
-    - cron: '30 19 * * 0-4'
+    # 5:30am AWST Mon–Fri = 21:30 UTC Sun–Thu
+    # Pipeline retries video discovery every hour until 7:30am AWST if no video found (up to 2 retries)
+    - cron: '30 21 * * 0-4'
   workflow_dispatch:
     inputs:
       parliament:
