@@ -13,6 +13,7 @@ type Question = {
   brainrot_summary?: string | null;
   transcript_json?: TranscriptEntry[] | null;
   audio_clip_url?: string | null;
+  source_note?: string | null;
   asker_name?: string | null;
   asker_party?: string | null;
   minister_name?: string | null;

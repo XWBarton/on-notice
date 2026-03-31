@@ -67,6 +67,7 @@ interface QuestionCardProps {
     brainrot_summary?: string | null;
     transcript_json?: TranscriptEntry[] | null;
     audio_clip_url?: string | null;
+    source_note?: string | null;
     asker_name?: string | null;
     asker_party?: string | null;
     minister_name?: string | null;
@@ -370,6 +371,12 @@ export function QuestionCard({ question, hansardUrl }: QuestionCardProps) {
             </div>
           )}
         </div>
+      )}
+
+      {question.source_note && (
+        <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+          {question.source_note}
+        </p>
       )}
 
       {hasTranscript && (

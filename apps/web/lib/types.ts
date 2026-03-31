@@ -125,6 +125,7 @@ export interface Database {
           audio_start_sec: number | null;
           audio_end_sec: number | null;
           audio_clip_url: string | null;
+          source_note: string | null;
           created_at: string;
         };
         Insert: Omit<Database["public"]["Tables"]["questions"]["Row"], "id" | "created_at">;

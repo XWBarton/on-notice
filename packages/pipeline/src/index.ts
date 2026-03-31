@@ -27,6 +27,7 @@ import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { uploadEpisode, uploadClip, uploadChapters, fetchMemberClips } from "./audio/uploader";
 import { buildQtTranscript, buildQtTranscriptFromParlViewCaptions } from "./audio/captions";
 import { extractTimestampsWithAI } from "./ai/timestamp-questions";
+import { recoverMissingQuestions } from "./ai/recover-missing-questions";
 import * as fs from "node:fs";
 
 async function run() {
@@ -184,6 +185,109 @@ async function run() {
     }
     console.log(`Enriched ${questionsWithContent.filter((q) => q.askerName).length} questions with speaker info`);
 
+    // ── Step 3c: ParlView captions fallback — recover questions OA missed ─────
+    // Fetch ParlView captions early and compare questioner count against OA.
+    // If captions reveal extra questions, extract them via Claude and insert them
+    // into questionsWithContent so they flow through classification + AI steps.
+    let parlviewVideoEarly: import("./scrapers/parlview").ParlViewVideo | null = null;
+    let earlyParlViewCaptions: import("./scrapers/parlview").ParlViewCaption[] | null = null;
+
+    if (config.questionTimeChamber) {
+      console.log("Step 3c: Checking ParlView captions for questions missed by OA...");
+      try {
+        parlviewVideoEarly = await findParlViewVideo(date, parliamentId as "fed_hor" | "fed_sen");
+        if (parlviewVideoEarly) {
+          const qtSegment = parlviewVideoEarly.segments.find((s) => /question time/i.test(s.segmentTitle));
+          if (qtSegment) {
+            earlyParlViewCaptions = await fetchParlViewCaptions(parlviewVideoEarly.id);
+
+            if (earlyParlViewCaptions.length > 0) {
+              // Build the same speaker-call transcript used later for audio timestamps
+              const speakerCallTranscript = buildQtTranscriptFromParlViewCaptions(
+                earlyParlViewCaptions,
+                qtSegment.segmentIn,
+                qtSegment.segmentOut
+              );
+
+              if (speakerCallTranscript) {
+                // Build a condensed raw-captions text for the QT window so Claude can
+                // read question/answer text (limit to ~20 000 chars to stay within budget)
+                const qtStartSec = timecodeToSeconds(qtSegment.segmentIn);
+                const qtEndSec   = timecodeToSeconds(qtSegment.segmentOut);
+                const rawLines: string[] = [];
+                for (const c of earlyParlViewCaptions) {
+                  const sec = timecodeToSeconds(c.In);
+                  if (sec < qtStartSec || sec > qtEndSec) continue;
+                  rawLines.push(`T+${Math.round(sec - qtStartSec)}s: ${c.Text.replace(/\s+/g, " ").trim()}`);
+                }
+                const rawQtText = rawLines.join("\n").slice(0, 20000);
+
+                const knownQuestions = questionsWithContent.map((q) => ({
+                  askerName: q.askerName,
+                  subject: q.subject,
+                }));
+
+                const recovered = await recoverMissingQuestions(
+                  speakerCallTranscript,
+                  rawQtText,
+                  knownQuestions
+                ).catch((e) => {
+                  console.warn(`  Recovery extraction failed: ${e.message}`);
+                  return [];
+                });
+
+                if (recovered.length > 0) {
+                  console.log(`  OA missed ${recovered.length} question(s) — recovering from captions:`);
+                  for (const rq of recovered) {
+                    console.log(`    ${rq.askerName} → ${rq.ministerName ?? "?"} (after: ${rq.afterAskerName ?? "start"})`);
+
+                    // Find insertion index based on afterAskerName
+                    let insertAt = questionsWithContent.length; // default: append
+                    if (rq.afterAskerName) {
+                      const afterIdx = questionsWithContent.findIndex(
+                        (q) => q.askerName?.toLowerCase().includes(rq.afterAskerName!.toLowerCase().split(" ").pop()!)
+                      );
+                      if (afterIdx >= 0) insertAt = afterIdx + 1;
+                    } else {
+                      insertAt = 0; // before all others
+                    }
+
+                    questionsWithContent.splice(insertAt, 0, {
+                      questionNumber: 0, // renumbered below
+                      askerName: rq.askerName,
+                      askerParty: null,
+                      askerConstituency: null,
+                      ministerName: rq.ministerName,
+                      ministerParty: null,
+                      subject: rq.subject,
+                      questionText: rq.questionText,
+                      answerText: rq.answerText,
+                      hansardTime: null,
+                      gid: null,
+                      transcriptJson: null,
+                      source_note: "Transcript derived from ParlView closed captions — not yet indexed by OpenAustralia Hansard.",
+                    });
+                  }
+
+                  // Renumber all questions sequentially after insertions
+                  questionsWithContent.forEach((q, i) => { q.questionNumber = i + 1; });
+                  console.log(`  Questions after recovery: ${questionsWithContent.length}`);
+                } else {
+                  console.log("  No missing questions detected.");
+                }
+              }
+            }
+          } else {
+            console.log("  No Question Time segment in ParlView metadata — skipping captions check.");
+          }
+        } else {
+          console.log("  ParlView video not yet available — skipping captions check.");
+        }
+      } catch (e) {
+        console.warn(`  Step 3c failed (non-fatal): ${(e as Error).message}`);
+      }
+    }
+
     // ── Step 4: Fetch divisions from TVFY ────────────────────────────────────
     console.log("Step 4: Fetching divisions...");
     const tvfyHouse = config.chamber === "lower" ? "representatives" : "senate";
@@ -332,6 +436,7 @@ async function run() {
           ai_summary: aiSummary,
           brainrot_summary: brainrotSummary,
           transcript_json: q.transcriptJson ?? null,
+          source_note: (q as { source_note?: string }).source_note ?? null,
           asker_name: q.askerName,
           asker_party: q.askerParty ? (FEDERAL_PARTIES[q.askerParty]?.short_name ?? q.askerParty) : null,
           minister_name: q.ministerName,
@@ -407,7 +512,8 @@ async function run() {
         // Text processing above is already done; this only gates the audio.
         const HOUR_MS = 60 * 60 * 1000;
         const MAX_RETRIES = 4;
-        let parlviewVideo = await findParlViewVideo(date, parliamentId as "fed_hor" | "fed_sen");
+        // Reuse the video fetched in step 3c if available (saves a redundant API call)
+        let parlviewVideo = parlviewVideoEarly ?? await findParlViewVideo(date, parliamentId as "fed_hor" | "fed_sen");
         for (let attempt = 1; attempt <= MAX_RETRIES && !parlviewVideo; attempt++) {
           console.log(`  No ParlView video found (attempt ${attempt}/${MAX_RETRIES}) — waiting 1 hour before retry...`);
           await new Promise((r) => setTimeout(r, HOUR_MS));
@@ -490,7 +596,10 @@ async function run() {
             let qtTranscript: string | null = null;
 
             if (qtSegment) {
-              const parlviewCaptions = await fetchParlViewCaptions(parlviewVideo.id);
+              // Reuse captions fetched in step 3c if available (same video, same data)
+              const parlviewCaptions = (earlyParlViewCaptions && earlyParlViewCaptions.length > 0)
+                ? earlyParlViewCaptions
+                : await fetchParlViewCaptions(parlviewVideo.id);
               if (parlviewCaptions.length > 0) {
                 qtTranscript = buildQtTranscriptFromParlViewCaptions(
                   parlviewCaptions,
