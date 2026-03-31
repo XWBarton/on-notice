@@ -106,5 +106,5 @@ ${rawCaptionsWindow}`,
   );
 
   if (!result || typeof result.questionText !== "string") return null;
-  return result;
+  return { askerName, ...result };
 }
