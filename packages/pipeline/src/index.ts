@@ -248,7 +248,10 @@ async function run() {
                     console.warn(`  Extraction failed for ${mq.name}: ${e.message}`);
                     return null;
                   });
-                  if (extracted) {
+                  // Reject self-referential results (minister == asker — can't question yourself)
+                  const isSelfRef = extracted?.ministerName &&
+                    extracted.ministerName.toLowerCase().split(" ").pop() === mq.name.toLowerCase().split(" ").pop();
+                  if (extracted && !isSelfRef) {
                     recovered.push({ ...extracted, askerName: mq.name, afterAskerName: mq.afterAskerName });
                   }
                 }

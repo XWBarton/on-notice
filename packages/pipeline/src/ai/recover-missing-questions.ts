@@ -55,9 +55,20 @@ Return only valid JSON.`,
     `Known questioners already captured from Hansard: ${knownNames || "(none)"}
 
 Read the speaker-call transcript below and identify any questioners who are NOT in the known list above.
-Each questioner is either called by the President (e.g. "Senator [Name]") or opens with "My question is to".
 
-For each missing questioner return:
+A questioner is someone FORMALLY CALLED by the Senate President or House Speaker to ask a question, using phrases like:
+- "I give the call to Senator [Name]"
+- "Senator [Name], a question" / "Senator [Name]?"
+- "I call Senator [Name]"
+- The questioner themselves opens with "My question is to the Minister for..."
+
+DO NOT count:
+- Senators merely mentioned by name in a minister's answer or in speeches (e.g. "I thank Senator X", "as Senator X said")
+- Interjections from senators during another member's speech
+- Supplementary questions — only count senators newly called by the President for a primary question
+- Anyone who appears to be both the questioner and the minister (self-referential)
+
+For each genuinely missing questioner return:
 - name: their full name as best you can determine
 - approxStartSec: the T+ seconds value from the transcript line where they were called or started speaking
 - afterAskerName: the name of the questioner who spoke immediately before them (from the known list or other recovered questioners), or null if they appear first
@@ -89,7 +100,8 @@ export async function extractQuestionFromCaptions(
 The captions contain speech recognition errors — clean them up to produce readable text.
 Return only valid JSON.`,
     `Extract the full question and ministerial response for Senator/Member ${askerName} from these captions.
-Include all supplementary questions and their responses in the answerText.
+Include the primary question and any supplementary questions with their responses in the answerText.
+Exclude interjections and procedural comments from other senators — only include ${askerName}'s question(s) and the minister's responses.
 Clean up speech recognition errors to produce readable prose.
 
 Return JSON:
@@ -99,6 +111,8 @@ Return JSON:
   "questionText": "full primary question text, cleaned up",
   "answerText": "full minister response including responses to supplementaries, cleaned up"
 }
+
+If this window does not appear to contain a genuine question from ${askerName}, return null.
 
 Captions:
 ${rawCaptionsWindow}`,
