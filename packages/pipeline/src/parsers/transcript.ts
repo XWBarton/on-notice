@@ -1,4 +1,5 @@
 import type { OASpeechRow } from "../scrapers/fed-hansard";
+import type { XmlExchangeEntry } from "./hansard-xml";
 
 export type TranscriptEntryType = "speech" | "interjection" | "procedural";
 
@@ -77,6 +78,37 @@ function classifyItalicLine(text: string): TranscriptEntryType {
   // Short lines without attribution = likely interjection
   if (text.split(/\s+/).length <= 12) return "interjection";
   return "procedural";
+}
+
+/**
+ * Build a transcript from a rewritexml exchange (speeches + interjections).
+ * Party lookup is provided by the caller via the member cache.
+ */
+export function buildTranscriptFromExchange(
+  exchange: XmlExchangeEntry[],
+  lookupParty: (speakerName: string) => string | null
+): TranscriptEntry[] {
+  return exchange
+    .filter((e) => e.text.trim())
+    .map((e) => ({
+      type: e.type,
+      speaker: normaliseSpeakerName(e.speakerName),
+      party: lookupParty(e.speakerName),
+      text: e.text.trim(),
+    }));
+}
+
+/**
+ * Convert rewritexml speaker names to title case.
+ * "Senator GHOSH" → "Senator Ghosh", "The PRESIDENT" → "The President"
+ */
+function normaliseSpeakerName(name: string): string {
+  return name.replace(/\b([A-Z]{2,}(?:-[A-Z]+)*)\b/g, (word) =>
+    word
+      .split("-")
+      .map((part) => part[0] + part.slice(1).toLowerCase())
+      .join("-")
+  );
 }
 
 function stripHtml(html: string): string {

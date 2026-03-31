@@ -10,11 +10,11 @@ import { format } from "date-fns";
 import { db } from "./db/client";
 import { PARLIAMENTS, FEDERAL_PARTIES } from "./config";
 import { syncFederalMembers } from "./scrapers/fed-members";
-import { fetchDebates, fetchSpeechRows, type OASpeechRow } from "./scrapers/fed-hansard";
+import { fetchDebates, fetchDebatesXml, fetchSpeechRows, type OASpeechRow } from "./scrapers/fed-hansard";
 import { fetchDivisionsForDate } from "./scrapers/tvfy-divisions";
-import { parseDebates } from "./parsers/hansard-xml";
-import { classifyQuestion, resetMemberCache } from "./parsers/questions";
-import { buildTranscript } from "./parsers/transcript";
+import { parseDebates, parseDebatesXml } from "./parsers/hansard-xml";
+import { classifyQuestion, getMemberPartyLookup, resetMemberCache } from "./parsers/questions";
+import { buildTranscript, buildTranscriptFromExchange } from "./parsers/transcript";
 import { summariseBill } from "./ai/summarise-bill";
 import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
@@ -95,9 +95,20 @@ async function run() {
   console.log(`Sitting day ID: ${sittingDayId}`);
 
   try {
-    // ── Step 3: Parse debates from OpenAustralia ───────────────────────────────
+    // ── Step 3: Parse debates — XML primary, JSON API fallback ────────────────
     console.log("Step 3: Parsing debates...");
-    const { bills: rawBills, questions: allQuestions, divisionTimes } = parseDebates(debateData);
+    let parseResult: ReturnType<typeof parseDebates>;
+    const xmlText = await fetchDebatesXml(date, oaType as "representatives" | "senate").catch((e) => {
+      console.warn(`  XML fetch failed: ${e.message} — falling back to JSON API`);
+      return null;
+    });
+    if (xmlText) {
+      parseResult = parseDebatesXml(xmlText);
+    } else {
+      console.log("  Using JSON API data");
+      parseResult = parseDebates(debateData);
+    }
+    const { bills: rawBills, questions: allQuestions, divisionTimes } = parseResult;
 
     // Deduplicate bills by (shortTitle, stage) — the same bill reading can appear in multiple
     // Hansard sections (e.g. top-level and inside a BILLS container)
@@ -111,8 +122,12 @@ async function run() {
 
     console.log(`Parsed: ${allBills.length} bills (${rawBills.length} before dedup), ${allQuestions.length} questions`);
 
-    // ── Step 3b: Enrich questions with full speech content from OA ─────────────
-    console.log("Step 3b: Fetching individual speech content for questions...");
+    // ── Step 3b: Enrich questions with speaker/party/transcript data ──────────
+    // For XML-parsed questions (q.exchange set): build transcript from the structured
+    // exchange and look up party from the member DB — no OA API call needed.
+    // For fallback JSON API questions (q.gid set): use fetchSpeechRows as before.
+    console.log("Step 3b: Enriching questions with speaker and transcript data...");
+
     const stripHtml = (html: string) => html
       .replace(/<[^>]+>/g, " ")
       .replace(/&#8212;/g, "—").replace(/&#8211;/g, "–").replace(/&#8216;/g, "'")
@@ -121,8 +136,25 @@ async function run() {
       .replace(/&#\d+;/g, " ")
       .replace(/\s+/g, " ").trim();
 
+    // Pre-load member cache once — used for party lookup in XML path
+    const lookupParty = await getMemberPartyLookup(parliamentId);
+
     const questionsWithContent = [];
     for (const q of allQuestions) {
+      // ── XML path: full content + interjections already parsed ────────────────
+      if (q.exchange) {
+        const transcriptJson = buildTranscriptFromExchange(q.exchange, lookupParty);
+        questionsWithContent.push({
+          ...q,
+          askerParty: q.askerName ? lookupParty(q.askerName) : null,
+          askerConstituency: q.exchange.find((e) => e.speakerName === q.askerName)?.electorate ?? null,
+          ministerParty: q.ministerName ? lookupParty(q.ministerName) : null,
+          transcriptJson,
+        });
+        continue;
+      }
+
+      // ── OA API fallback path: fetch full speech rows ─────────────────────────
       if (!q.gid) {
         questionsWithContent.push({ ...q, transcriptJson: null });
         continue;
@@ -130,8 +162,6 @@ async function run() {
 
       const rows = await fetchSpeechRows(q.gid, oaType as "representatives" | "senate").catch(() => []);
 
-      // First htype=12 row is the question; subsequent rows are the exchange (minister + interjectors + Speaker).
-      // If the GID covers a broad section, later rows may be from the next questioner — stop there.
       const speechRows = rows.filter((r) => r.htype === "12");
       const questionRow = speechRows[0];
       const speakerKey = (s: OASpeechRow["speaker"]) =>
@@ -139,7 +169,6 @@ async function run() {
 
       const questionerKey = speakerKey(questionRow?.speaker);
 
-      // exchangeRows = all rows after the question until the next questioner starts
       const allAfter = speechRows.slice(1);
       const nextQIdx = allAfter.findIndex((r) => {
         const key = speakerKey(r.speaker);
@@ -148,9 +177,6 @@ async function run() {
       });
       const exchangeRows = nextQIdx >= 0 ? allAfter.slice(0, nextQIdx) : allAfter;
 
-      // Find the minister: the non-questioner speaker with the most body content in the exchange.
-      // Using content length is more reliable than position (speechRows[1] may be "Opposition Members")
-      // or transcript type (Speaker procedural calls aren't always in italic HTML).
       const speakerContentMap = new Map<string, number>();
       for (const row of exchangeRows) {
         const key = speakerKey(row.speaker);
@@ -163,12 +189,9 @@ async function run() {
 
       const transcriptJson = buildTranscript(questionRow, exchangeRows);
 
-      // answerRows = minister-only rows, for clean answerText
       const answerRows = ministerKey
         ? exchangeRows.filter((r) => speakerKey(r.speaker) === ministerKey)
         : exchangeRows;
-
-      // Find the minister's OA speaker record for party info
       const ministerRow = answerRows.find((r) => speakerKey(r.speaker) === ministerKey);
 
       questionsWithContent.push({

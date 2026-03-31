@@ -43,6 +43,22 @@ export function resetMemberCache() {
 }
 
 /**
+ * Returns a party-lookup function backed by the member cache.
+ * Accepts raw rewritexml speaker names like "Senator GHOSH" or "The PRESIDENT".
+ * Call once before processing questions; the cache is shared with classifyQuestion.
+ */
+export async function getMemberPartyLookup(
+  parliamentId: string
+): Promise<(speakerName: string) => string | null> {
+  const cache = await getMemberCache(parliamentId);
+  return (speakerName: string) => {
+    const lastName = extractLastName(speakerName);
+    const candidates = cache.get(normalise(lastName));
+    return candidates?.[0]?.party_id ?? null;
+  };
+}
+
+/**
  * Detect if a question is a Dorothy Dixer.
  *
  * Returns: { isDorothyDixer, askerMemberId, ministerMemberId }

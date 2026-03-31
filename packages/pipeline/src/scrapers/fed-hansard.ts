@@ -99,6 +99,35 @@ export async function fetchSpeechRows(
 }
 
 /**
+ * Fetch the raw scraped Hansard XML for a given date and chamber.
+ * Source: data.openaustralia.org.au/scrapedxml — updated daily, ahead of the JSON API.
+ * Returns the raw XML string, or null if not found.
+ */
+export async function fetchDebatesXml(
+  date: string,
+  type: "representatives" | "senate"
+): Promise<string | null> {
+  const subdir = type === "senate" ? "senate_debates" : "debates";
+  const url = `http://data.openaustralia.org.au/rewritexml/${subdir}/${date}.xml`;
+
+  let res: Response | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+      if (res.ok || res.status === 404) break;
+    } catch (e) {
+      if (attempt === 3) throw e;
+      console.warn(`  OA XML fetch attempt ${attempt} failed, retrying...`);
+      await new Promise((r) => setTimeout(r, attempt * 3000));
+    }
+  }
+  if (!res) throw new Error("fetchDebatesXml: all retries failed");
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`fetchDebatesXml error: ${res.status}`);
+  return res.text();
+}
+
+/**
  * Check if parliament sat on a given date by seeing if debates exist.
  */
 export async function checkSittingDay(

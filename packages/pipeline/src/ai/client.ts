@@ -95,5 +95,8 @@ export async function callClaude<T>(
     } catch { /* fall through */ }
   }
 
+  // Handle null literal (valid JSON, but not an array or object)
+  if (/\bnull\b/.test(text)) return null as T;
+
   throw new Error(`No valid JSON in Claude response: ${text.slice(0, 300)}`);
 }
