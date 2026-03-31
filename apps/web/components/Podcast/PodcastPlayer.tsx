@@ -103,10 +103,10 @@ export function PodcastPlayer({ audioUrl, chapters, parliamentId }: PodcastPlaye
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-      <div className="px-5 pt-5 pb-4 space-y-4">
+      <div className="px-5 pt-4 pb-3 space-y-3">
 
         {/* Progress bar + time */}
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           <div
             ref={progressRef}
             onClick={handleProgressClick}
@@ -132,26 +132,25 @@ export function PodcastPlayer({ audioUrl, chapters, parliamentId }: PodcastPlaye
         </div>
 
         {/* Controls */}
-        <div className="flex items-center justify-center gap-6">
-          {/* Rewind 30s — counter-clockwise arrow, tip points left */}
+        <div className="flex items-center justify-center gap-8">
+          {/* Rewind 30s */}
           <button
             onClick={() => skip(-30)}
             title="Rewind 30 seconds"
-            className="flex flex-col items-center gap-1 transition-opacity hover:opacity-70"
+            className="transition-opacity hover:opacity-70"
             style={{ color: accent.text }}
           >
             <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
               <text x="12" y="16.5" fontSize="5" fontWeight="700" fill="currentColor" textAnchor="middle" fontFamily="system-ui, sans-serif">30</text>
             </svg>
-            <span className="text-[10px] font-medium tracking-wide">rewind</span>
           </button>
 
           {/* Play / Pause */}
           <button
             onClick={toggle}
             title={playing ? "Pause" : "Play"}
-            className="w-14 h-14 flex items-center justify-center rounded-full shadow-md text-white transition-all active:scale-95"
+            className="w-12 h-12 flex items-center justify-center rounded-full shadow-md text-white transition-all active:scale-95"
             style={{ backgroundColor: playing ? accent.bgHover : accent.bg }}
           >
             {loading ? (
@@ -171,18 +170,17 @@ export function PodcastPlayer({ audioUrl, chapters, parliamentId }: PodcastPlaye
             )}
           </button>
 
-          {/* Skip 30s — clockwise arrow, tip points right */}
+          {/* Skip 30s */}
           <button
             onClick={() => skip(30)}
             title="Skip 30 seconds"
-            className="flex flex-col items-center gap-1 transition-opacity hover:opacity-70"
+            className="transition-opacity hover:opacity-70"
             style={{ color: accent.text }}
           >
             <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
               <text x="12" y="16.5" fontSize="5" fontWeight="700" fill="currentColor" textAnchor="middle" fontFamily="system-ui, sans-serif">30</text>
             </svg>
-            <span className="text-[10px] font-medium tracking-wide">skip</span>
           </button>
         </div>
       </div>
