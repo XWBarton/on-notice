@@ -133,17 +133,16 @@ export function PodcastPlayer({ audioUrl, chapters, parliamentId }: PodcastPlaye
 
         {/* Controls */}
         <div className="flex items-center justify-center gap-6">
-          {/* Rewind 30s */}
+          {/* Rewind 30s — counter-clockwise arrow, tip points left */}
           <button
             onClick={() => skip(-30)}
             title="Rewind 30 seconds"
             className="flex flex-col items-center gap-1 transition-opacity hover:opacity-70"
             style={{ color: accent.text }}
           >
-            <svg className="w-7 h-7" viewBox="0 0 28 28" fill="none">
-              <path d="M14 5.5A8.5 8.5 0 1 0 22.5 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              <path d="M14 5.5L11 2.5M14 5.5L17 2.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <text x="14" y="16.5" fontSize="6" fontWeight="700" fill="currentColor" textAnchor="middle" fontFamily="system-ui">30</text>
+            <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+              <text x="12" y="16.5" fontSize="5" fontWeight="700" fill="currentColor" textAnchor="middle" fontFamily="system-ui, sans-serif">30</text>
             </svg>
             <span className="text-[10px] font-medium tracking-wide">rewind</span>
           </button>
@@ -172,17 +171,16 @@ export function PodcastPlayer({ audioUrl, chapters, parliamentId }: PodcastPlaye
             )}
           </button>
 
-          {/* Skip 30s */}
+          {/* Skip 30s — clockwise arrow, tip points right */}
           <button
             onClick={() => skip(30)}
             title="Skip 30 seconds"
             className="flex flex-col items-center gap-1 transition-opacity hover:opacity-70"
             style={{ color: accent.text }}
           >
-            <svg className="w-7 h-7" viewBox="0 0 28 28" fill="none">
-              <path d="M14 5.5A8.5 8.5 0 1 1 5.5 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              <path d="M14 5.5L11 2.5M14 5.5L17 2.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <text x="14" y="16.5" fontSize="6" fontWeight="700" fill="currentColor" textAnchor="middle" fontFamily="system-ui">30</text>
+            <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
+              <text x="12" y="16.5" fontSize="5" fontWeight="700" fill="currentColor" textAnchor="middle" fontFamily="system-ui, sans-serif">30</text>
             </svg>
             <span className="text-[10px] font-medium tracking-wide">skip</span>
           </button>
