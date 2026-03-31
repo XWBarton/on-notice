@@ -33,7 +33,7 @@ HOUSE = {
         ('#E13940', 94, 'Labor'),
         ('#008B96', 7,  'Teal independents'),
         ('#808080', 3,  'Other independents'),
-        ('#FF6600', 1,  'Centre Alliance'),
+        ('#4B9FB4', 1,  'Centre Alliance'),
         ('#8B4513', 1,  "Katter's Australian Party"),
         ('#F36C21', 1,  'One Nation'),
         ('#006946', 14, 'Nationals'),

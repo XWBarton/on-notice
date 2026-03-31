@@ -305,9 +305,8 @@ export function QuestionCard({ question, hansardUrl }: QuestionCardProps) {
               {question.asker?.name_display ?? question.asker_name}
             </span>
             {(() => {
-              const p = question.asker?.parties
-                ? { short_name: question.asker.parties.short_name, colour_hex: question.asker.parties.colour_hex }
-                : partyBadgeProps(question.asker_party);
+              const raw = question.asker?.parties?.short_name ?? question.asker_party;
+              const p = partyBadgeProps(raw);
               return p ? <PartyBadge party={p} /> : null;
             })()}
             <span className="text-gray-400">→</span>
