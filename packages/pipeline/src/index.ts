@@ -511,10 +511,10 @@ async function run() {
       try {
         // 8a: Find ParlView video ID for today.
         // Retry every hour until 7:30am Perth (AWST = UTC+8).
-        // The pipeline starts at 3:30am Perth — up to 4 retries (4:30, 5:30, 6:30, 7:30am).
+        // The pipeline starts at 5:30am Perth — up to 2 retries (6:30, 7:30am).
         // Text processing above is already done; this only gates the audio.
         const HOUR_MS = 60 * 60 * 1000;
-        const MAX_RETRIES = 4;
+        const MAX_RETRIES = 2;
         // Reuse the video fetched in step 3c if available (saves a redundant API call)
         let parlviewVideo = parlviewVideoEarly ?? await findParlViewVideo(date, parliamentId as "fed_hor" | "fed_sen");
         for (let attempt = 1; attempt <= MAX_RETRIES && !parlviewVideo; attempt++) {
