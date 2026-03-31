@@ -236,6 +236,9 @@ export function parseDebatesXml(xmlText_: string): {
   questions: ParsedQuestion[];
   divisionTimes: ParsedDivisionTime[];
 } {
+  // Strip scrapedxml <para> tags that occasionally appear unescaped in rewritexml speech text
+  xmlText_ = xmlText_.replace(/<\/?para>/gi, "");
+
   let parsed: XmlChild[];
   try {
     const parser = new XMLParser({
