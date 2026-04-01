@@ -96,8 +96,8 @@ async function run() {
 
   try {
     // ── Step 3: Parse debates — JSON API primary, XML fallback ───────────────
-    // TODO: Switch USE_XML_PRIMARY back to true once the OA rewritexml HoR bug is fixed.
-    const USE_XML_PRIMARY = false;
+    // HoR rewritexml has a nesting bug in the OA feed — use JSON API for representatives only.
+    const USE_XML_PRIMARY = oaType !== "representatives";
     console.log("Step 3: Parsing debates...");
     let parseResult: ReturnType<typeof parseDebates>;
     if (USE_XML_PRIMARY) {
@@ -125,7 +125,7 @@ async function run() {
         parseResult = parseDebates(debateData);
       }
     } else {
-      console.log("  Using JSON API data (XML disabled — see USE_XML_PRIMARY)");
+      console.log("  Using JSON API data (XML disabled for HoR — OA rewritexml nesting bug)");
       parseResult = parseDebates(debateData);
     }
     const { bills: rawBills, questions: allQuestions, divisionTimes } = parseResult;
@@ -164,7 +164,8 @@ async function run() {
       // ── XML path: full content + interjections already parsed ────────────────
       if (q.exchange) {
         const lookupParty = (name: string) => xmlMemberLookup(name).partyShortName;
-        const transcriptJson = buildTranscriptFromExchange(q.exchange, lookupParty);
+        const lookupDisplayName = (name: string) => xmlMemberLookup(name).displayName;
+        const transcriptJson = buildTranscriptFromExchange(q.exchange, lookupParty, lookupDisplayName);
         const askerInfo = q.askerName ? xmlMemberLookup(q.askerName) : null;
         const ministerInfo = q.ministerName ? xmlMemberLookup(q.ministerName) : null;
         questionsWithContent.push({
@@ -202,10 +203,12 @@ async function run() {
       });
       const exchangeRows = nextQIdx >= 0 ? allAfter.slice(0, nextQIdx) : allAfter;
 
+      const PRESIDING_OFFICER_PARTIES = new Set(["Speaker", "SPEAKE", "President of the Senate", "PRESID", "Deputy President", "DEPUTY"]);
       const speakerContentMap = new Map<string, number>();
       for (const row of exchangeRows) {
         const key = speakerKey(row.speaker);
         if (!key || key === questionerKey) continue;
+        if (row.speaker?.party && PRESIDING_OFFICER_PARTIES.has(row.speaker.party)) continue;
         const len = (row.body ?? "").replace(/<[^>]+>/g, "").trim().length;
         speakerContentMap.set(key, (speakerContentMap.get(key) ?? 0) + len);
       }

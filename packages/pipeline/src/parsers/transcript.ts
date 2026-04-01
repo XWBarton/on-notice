@@ -86,13 +86,14 @@ function classifyItalicLine(text: string): TranscriptEntryType {
  */
 export function buildTranscriptFromExchange(
   exchange: XmlExchangeEntry[],
-  lookupParty: (speakerName: string) => string | null
+  lookupParty: (speakerName: string) => string | null,
+  lookupDisplayName?: (speakerName: string) => string | null
 ): TranscriptEntry[] {
   return exchange
     .filter((e) => e.text.trim())
     .map((e) => ({
       type: e.type,
-      speaker: normaliseSpeakerName(e.speakerName),
+      speaker: lookupDisplayName?.(e.speakerName) ?? normaliseSpeakerName(e.speakerName),
       party: lookupParty(e.speakerName),
       text: e.text.trim(),
     }));
