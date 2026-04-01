@@ -95,30 +95,37 @@ async function run() {
   console.log(`Sitting day ID: ${sittingDayId}`);
 
   try {
-    // ── Step 3: Parse debates — XML primary, JSON API fallback ────────────────
+    // ── Step 3: Parse debates — JSON API primary, XML fallback ───────────────
+    // TODO: Switch USE_XML_PRIMARY back to true once the OA rewritexml HoR bug is fixed.
+    const USE_XML_PRIMARY = false;
     console.log("Step 3: Parsing debates...");
     let parseResult: ReturnType<typeof parseDebates>;
-    const xmlText = await fetchDebatesXml(date, oaType as "representatives" | "senate").catch((e) => {
-      console.warn(`  XML fetch failed: ${e.message} — falling back to JSON API`);
-      return null;
-    });
-    if (xmlText) {
-      const xmlResult = parseDebatesXml(xmlText);
-      if (xmlResult.questions.length > 0) {
-        parseResult = xmlResult;
+    if (USE_XML_PRIMARY) {
+      const xmlText = await fetchDebatesXml(date, oaType as "representatives" | "senate").catch((e) => {
+        console.warn(`  XML fetch failed: ${e.message} — falling back to JSON API`);
+        return null;
+      });
+      if (xmlText) {
+        const xmlResult = parseDebatesXml(xmlText);
+        if (xmlResult.questions.length > 0) {
+          parseResult = xmlResult;
+        } else {
+          // XML had no questions (may have bills) — fall back to JSON API for questions;
+          // merge XML bills in case JSON API misses any.
+          console.warn("  Rewritexml had no questions — falling back to JSON API");
+          const jsonResult = parseDebates(debateData);
+          parseResult = {
+            questions: jsonResult.questions,
+            bills: xmlResult.bills.length > 0 ? xmlResult.bills : jsonResult.bills,
+            divisionTimes: xmlResult.divisionTimes.length > 0 ? xmlResult.divisionTimes : jsonResult.divisionTimes,
+          };
+        }
       } else {
-        // XML had no questions (may have bills) — fall back to JSON API for questions;
-        // merge XML bills in case JSON API misses any.
-        console.warn("  Rewritexml had no questions — falling back to JSON API");
-        const jsonResult = parseDebates(debateData);
-        parseResult = {
-          questions: jsonResult.questions,
-          bills: xmlResult.bills.length > 0 ? xmlResult.bills : jsonResult.bills,
-          divisionTimes: xmlResult.divisionTimes.length > 0 ? xmlResult.divisionTimes : jsonResult.divisionTimes,
-        };
+        console.log("  Using JSON API data");
+        parseResult = parseDebates(debateData);
       }
     } else {
-      console.log("  Using JSON API data");
+      console.log("  Using JSON API data (XML disabled — see USE_XML_PRIMARY)");
       parseResult = parseDebates(debateData);
     }
     const { bills: rawBills, questions: allQuestions, divisionTimes } = parseResult;
