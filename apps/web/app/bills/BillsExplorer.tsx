@@ -14,7 +14,7 @@ export type BillRow = {
   ai_summary: string | null;
   introduced_date: string | null;
   parliament_id: string;
-  sitting_days: { sitting_date: string } | null;
+  sitting_days: { sitting_date: string; parliament_id: string } | null;
   members: {
     name_display: string;
     party_id: string | null;
@@ -39,10 +39,11 @@ const HOUSE_STEPS: PipelineStep[] = [
 ];
 
 const SENATE_STEPS: PipelineStep[] = [
-  { key: "senate_first_reading",  label: "First Reading",          shortLabel: "1st" },
-  { key: "senate_second_reading", label: "Second Reading",         shortLabel: "2nd" },
-  { key: "committee_of_whole",    label: "Committee of the Whole", shortLabel: "Committee" },
-  { key: "senate_third_reading",  label: "Third Reading",          shortLabel: "3rd" },
+  { key: "senate_first_reading",            label: "First Reading",            shortLabel: "1st" },
+  { key: "senate_second_reading",           label: "Second Reading",           shortLabel: "2nd" },
+  { key: "senate_second_reading_amendment", label: "2nd Reading Amendment",    shortLabel: "2nd Amend" },
+  { key: "committee_of_whole",              label: "Committee of the Whole",   shortLabel: "Committee" },
+  { key: "senate_third_reading",            label: "Third Reading",            shortLabel: "3rd" },
 ];
 
 const FINAL_STEPS: PipelineStep[] = [
@@ -57,18 +58,27 @@ const TERMINAL_STEPS: PipelineStep[] = [
 ];
 
 // Determine which pipeline step key a bill belongs to.
-// Senate stages for House-originated bills are senate_* synthetic keys.
+// Uses the sitting day's parliament_id (most accurate — reflects where the bill
+// currently is, even after crossing chambers) with a fallback to bill.parliament_id.
 function billStepKey(bill: BillRow): string {
   const s = bill.bill_stage;
   if (!s) return "unknown";
-  // committee_of_whole is always a Senate stage
+
+  // committee_of_whole is unambiguously a Senate stage regardless of origin
   if (s === "committee_of_whole") return "committee_of_whole";
-  // For Senate-originated bills, first/second/third_reading are Senate stages
-  if (bill.parliament_id === "fed_sen") {
-    if (s === "first_reading") return "senate_first_reading";
-    if (s === "second_reading" || s === "second_reading_amendment") return "senate_second_reading";
-    if (s === "third_reading") return "senate_third_reading";
+
+  // Use the sitting day's chamber if available, otherwise the bill's origin chamber
+  const currentParl = bill.sitting_days?.parliament_id ?? bill.parliament_id;
+  const inSenate = currentParl === "fed_sen";
+
+  if (inSenate) {
+    if (s === "first_reading")            return "senate_first_reading";
+    if (s === "second_reading")           return "senate_second_reading";
+    if (s === "second_reading_amendment") return "senate_second_reading_amendment";
+    if (s === "third_reading")            return "senate_third_reading";
   }
+
+  // House stages (first_reading, second_reading, etc.) fall through as-is
   return s;
 }
 
@@ -109,12 +119,8 @@ export function BillsExplorer({ bills }: { bills: BillRow[] }) {
           onSelect={handleSelect}
         />
 
-        {/* Arrow between chambers */}
-        <div className="flex items-center gap-2 pl-14">
-          <div className="h-px flex-1 border-t border-dashed border-gray-300" />
-          <span className="text-[10px] text-gray-400 whitespace-nowrap">passes to Senate</span>
-          <div className="h-px flex-1 border-t border-dashed border-gray-300" />
-        </div>
+        {/* Chamber divider */}
+        <div className="h-px bg-gray-100 mx-0" />
 
         {/* Senate row */}
         <PipelineRow
@@ -284,7 +290,8 @@ function BillCard({ bill }: { bill: BillRow }) {
   const ago = dateForAgo
     ? formatDistanceToNowStrict(parseISO(dateForAgo), { addSuffix: true })
     : null;
-  const chamberLabel = bill.parliament_id === "fed_sen" ? "Senate" : "House";
+  const currentParl = bill.sitting_days?.parliament_id ?? bill.parliament_id;
+  const chamberLabel = currentParl === "fed_sen" ? "Senate" : "House";
 
   return (
     <Link
@@ -308,7 +315,7 @@ function BillCard({ bill }: { bill: BillRow }) {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-            bill.parliament_id === "fed_sen" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"
+            currentParl === "fed_sen" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"
           }`}>
             {chamberLabel}
           </span>
