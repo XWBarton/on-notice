@@ -8,7 +8,7 @@ export const revalidate = 3600;
 const STAGE_INFO: Record<string, { label: string; description: string; next: string | null }> = {
   first_reading: {
     label: "First Reading",
-    description: "Introduced and tabled — no debate yet.",
+    description: "Introduced and tabled. No debate yet.",
     next: "Second Reading",
   },
   second_reading: {
@@ -38,12 +38,12 @@ const STAGE_INFO: Record<string, { label: string; description: string; next: str
   },
   passed: {
     label: "Passed",
-    description: "Both chambers have agreed to the bill — awaiting Royal Assent.",
+    description: "Both chambers have agreed. Awaiting Royal Assent.",
     next: "Royal Assent",
   },
   royal_assent: {
     label: "Royal Assent",
-    description: "Signed by the Governor-General — now an Act of Parliament.",
+    description: "Signed by the Governor-General. Now an Act of Parliament.",
     next: null,
   },
   withdrawn: {
@@ -58,7 +58,7 @@ const STAGE_INFO: Record<string, { label: string; description: string; next: str
   },
   defeated: {
     label: "Defeated",
-    description: "Voted down — cannot proceed without being reintroduced.",
+    description: "Voted down. Cannot proceed without being reintroduced.",
     next: null,
   },
 };

@@ -8,7 +8,7 @@ import Image from "next/image";
 import { headers } from "next/headers";
 
 export const metadata: Metadata = {
-  title: "On Notice — Australian Parliament Daily Feed",
+  title: "On Notice: Australian Parliament Daily Feed",
   description:
     "Bills, divisions, and an edited question time podcast. No Dorothy Dixers.",
   openGraph: {

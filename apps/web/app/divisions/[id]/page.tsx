@@ -59,7 +59,7 @@ export default async function DivisionPage({
             {passed ? "PASSED" : "DEFEATED"}
           </span>
           <span className="text-sm text-gray-500">
-            {division.ayes_count} Ayes — {division.noes_count} Noes
+            {division.ayes_count} Ayes · {division.noes_count} Noes
           </span>
         </div>
 

@@ -43,7 +43,7 @@ export default async function PodcastPage() {
       <div>
         <h1 className="text-2xl font-bold mb-1">Question Time Podcast</h1>
         <p className="text-gray-500 text-sm">
-          Daily question time — Dorothy Dixers removed. Just the real scrutiny.
+          Daily question time. Dorothy Dixers removed. Just the real scrutiny.
         </p>
       </div>
 

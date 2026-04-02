@@ -109,7 +109,7 @@ export default async function DatePage({
           <section>
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Question Time</h2>
             <p className="text-sm text-gray-400">
-              No question time data found on OpenAustralia for this day — it may still be processing.
+              No question time data found on OpenAustralia for this day. It may still be processing.
             </p>
           </section>
         )}

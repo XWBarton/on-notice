@@ -61,7 +61,7 @@ export default async function EpisodePage({
           <a href="/podcast" className="hover:underline">← All episodes</a>
         </p>
         <h1 className="text-xl font-bold">
-          {format(new Date(day.sitting_date), "EEEE d MMMM yyyy")} — Question Time
+          {format(new Date(day.sitting_date), "EEEE d MMMM yyyy")}: Question Time
         </h1>
         <p className="text-xs text-gray-400 mt-1">
           {realQuestions.length} questions
@@ -74,7 +74,7 @@ export default async function EpisodePage({
         <PodcastPlayer audioUrl={audioUrl} chapters={chapters} parliamentId={parliamentId} />
       ) : (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-500">
-          Audio processing in progress — check back soon.
+          Audio processing in progress. Check back soon.
         </div>
       )}
 

@@ -87,9 +87,9 @@ function BillPipeline({
 
       {isTerminal && stage && (
         <div className="mb-3 text-sm px-3 py-2 bg-orange-50 border border-orange-200 rounded text-orange-700 font-medium">
-          {stage === "withdrawn" && "Bill withdrawn — will not proceed further."}
-          {stage === "lapsed" && "Bill lapsed — would need to be reintroduced."}
-          {stage === "defeated" && "Bill defeated — cannot proceed without reintroduction."}
+          {stage === "withdrawn" && "Bill withdrawn. Will not proceed further."}
+          {stage === "lapsed" && "Bill lapsed. Would need to be reintroduced to continue."}
+          {stage === "defeated" && "Bill defeated. Cannot proceed without being reintroduced."}
         </div>
       )}
 
@@ -178,55 +178,57 @@ function BillPipeline({
 const STAGE_INFO: Record<string, { description: string; next: string | null }> = {
   first_reading: {
     description:
-      "The bill has been formally introduced and tabled — no debate yet. This is purely procedural.",
-    next: "Second Reading — debate on the bill's general principles",
+      "The bill is introduced to the chamber by its sponsor and given a formal title. No debate takes place. This step exists so all members are officially notified the bill is coming before any substantive discussion begins.",
+    next: "Second Reading, where the chamber debates the bill's overall purpose and principles",
   },
   second_reading: {
     description:
-      "Members are debating whether the chamber should in principle agree to the bill. Speeches focus on the overall purpose and policy, not specific clauses.",
-    next: "Consideration in Detail or Committee of the Whole — clause-by-clause examination",
+      "The main debate on whether the chamber supports the broad purpose of the bill. Members speak to its overall merits and concerns rather than the fine print. The government outlines its policy intentions; the opposition and crossbench put their case. This is the stage that determines whether the bill proceeds at all.",
+    next: "Consideration in Detail (House) or Committee of the Whole (Senate), where the bill is examined clause by clause",
   },
   second_reading_amendment: {
     description:
-      "An amendment to the second reading motion is being debated, often to express concerns or refer the bill to a committee.",
+      "A motion to amend the second reading is being considered. This is a procedural tool used to express formal concerns about the bill's intent or to push for it to be referred to a committee for further scrutiny before debate continues.",
     next: "Second Reading vote",
   },
   consideration_in_detail: {
     description:
-      "The House is examining the bill clause by clause. Members can propose and debate specific amendments to the text.",
-    next: "Third Reading — final House vote before the bill moves to the Senate",
+      "The full House sits as a committee to examine the bill clause by clause. Any member can propose amendments to specific sections. This is where the detailed wording gets scrutinised and changed. It exists because the broad second reading debate does not go into the fine print of individual provisions.",
+    next: "Third Reading, the final House vote before the bill moves to the Senate",
   },
   committee_of_whole: {
     description:
-      "The Senate is examining the bill clause by clause. Senators can propose amendments, and debate can be wide-ranging.",
-    next: "Third Reading — final Senate vote",
+      "The full Senate sits as a committee to go through the bill clause by clause. Senators can propose and debate amendments to any part of the text. Senate committee stages tend to be more wide-ranging than the House equivalent, and crossbench senators often use this stage to extract concessions from the government in exchange for their support.",
+    next: "Third Reading, the final Senate vote",
   },
   third_reading: {
     description:
-      "The final vote in the current chamber. If passed, the bill moves to the other chamber or — if both have agreed — receives Royal Assent.",
-    next: "Other chamber / Royal Assent",
+      "The final vote in this chamber on the bill as a whole, after all amendments have been considered. If it passes, the bill moves to the other chamber to go through the same process. If both chambers have already agreed to identical text, the bill proceeds directly to Royal Assent.",
+    next: "The other chamber, which runs the same process from First Reading, or Royal Assent if both chambers have already agreed",
   },
   passed: {
     description:
-      "Both chambers have agreed to the bill in the same form. It is now awaiting the Governor-General's signature to become law.",
-    next: "Royal Assent — becomes an Act of Parliament",
+      "Both the House and the Senate have agreed to the same version of the bill. It now goes to the Governor-General for Royal Assent, the final formal step before it becomes an Act of Parliament.",
+    next: "Royal Assent, at which point the bill becomes law",
   },
   royal_assent: {
     description:
-      "The Governor-General has signed the bill. It is now an Act of Parliament with the force of law.",
+      "The Governor-General has formally approved the bill on behalf of the Crown. From this point it is an Act of Parliament and has the full force of law. This step is almost always a formality once both chambers have agreed.",
     next: null,
   },
   withdrawn: {
-    description: "The bill has been withdrawn by its sponsor and will not proceed further.",
+    description:
+      "The bill's sponsor has withdrawn it from consideration. This can happen if the government changes its policy position, if agreement is reached through other means, or if the bill has no realistic prospect of passing.",
     next: null,
   },
   lapsed: {
     description:
-      "The bill lapsed at the end of a parliamentary term without being passed. It would need to be reintroduced to proceed.",
+      "The bill was not passed before parliament was prorogued or dissolved, such as at the end of a term or before an election. It has no further effect and would need to be reintroduced by a new or returning government to proceed.",
     next: null,
   },
   defeated: {
-    description: "The bill was voted down and cannot proceed without being reintroduced.",
+    description:
+      "The bill was voted down in a chamber and cannot proceed. It would need to be reintroduced as a new bill to have any further chance of becoming law.",
     next: null,
   },
 };
