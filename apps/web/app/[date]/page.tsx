@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase";
 import { format, parseISO, isFuture, differenceInDays } from "date-fns";
 import { notFound } from "next/navigation";
-import { BillCard } from "@/components/DailyFeed/BillCard";
 import { DivisionCard } from "@/components/DailyFeed/DivisionCard";
 import { DigestCard } from "@/components/DailyFeed/DigestCard";
 import { FeedNav } from "@/components/DailyFeed/FeedNav";
@@ -62,13 +61,9 @@ export default async function DatePage({
     notFound();
   }
 
-  const [{ data: digest }, { data: bills }, { data: divisions }, { data: questions }] =
+  const [{ data: digest }, { data: divisions }, { data: questions }] =
     await Promise.all([
       supabase.from("daily_digests").select("*").eq("sitting_day_id", sittingDay.id).maybeSingle(),
-      supabase
-        .from("bills")
-        .select("*, members(name_display, party_id, parties(name, short_name, colour_hex))")
-        .eq("sitting_day_id", sittingDay.id),
       supabase.from("divisions").select("*").eq("sitting_day_id", sittingDay.id).order("occurred_at").order("division_number"),
       supabase
         .from("questions")
@@ -128,14 +123,6 @@ export default async function DatePage({
           </section>
         )}
 
-        {bills && bills.length > 0 && (
-          <section>
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Bills</h2>
-            <div className="space-y-3">
-              {bills.map((bill) => <BillCard key={bill.id} bill={bill} />)}
-            </div>
-          </section>
-        )}
       </div>
     </div>
   );

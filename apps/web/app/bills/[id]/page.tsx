@@ -6,81 +6,232 @@ import { PartyBadge } from "@/components/Member/PartyBadge";
 
 export const revalidate = 86400;
 
-const STAGE_INFO: Record<string, { label: string; description: string; next: string | null }> = {
+// ─── Pipeline ───────────────────────────────────────────────────────────────
+
+type Step = { label: string; chamber: "house" | "senate" | "assent" };
+
+const HOUSE_FIRST_STEPS: Step[] = [
+  { label: "First Reading", chamber: "house" },
+  { label: "Second Reading", chamber: "house" },
+  { label: "Consideration in Detail", chamber: "house" },
+  { label: "Third Reading", chamber: "house" },
+  { label: "First Reading", chamber: "senate" },
+  { label: "Second Reading", chamber: "senate" },
+  { label: "Committee of the Whole", chamber: "senate" },
+  { label: "Third Reading", chamber: "senate" },
+  { label: "Royal Assent", chamber: "assent" },
+];
+
+const SENATE_FIRST_STEPS: Step[] = [
+  { label: "First Reading", chamber: "senate" },
+  { label: "Second Reading", chamber: "senate" },
+  { label: "Committee of the Whole", chamber: "senate" },
+  { label: "Third Reading", chamber: "senate" },
+  { label: "First Reading", chamber: "house" },
+  { label: "Second Reading", chamber: "house" },
+  { label: "Consideration in Detail", chamber: "house" },
+  { label: "Third Reading", chamber: "house" },
+  { label: "Royal Assent", chamber: "assent" },
+];
+
+// Map bill_stage → step index (0–8). Returns -1 if unknown.
+function getStageIndex(stage: string | null, isHouseFirst: boolean): number {
+  if (!stage) return -1;
+  const houseFirstMap: Record<string, number> = {
+    first_reading: 0,
+    second_reading: 1,
+    second_reading_amendment: 1,
+    consideration_in_detail: 2,
+    third_reading: 3,
+    committee_of_whole: 6,
+    passed: 8,
+    royal_assent: 8,
+  };
+  const senateFirstMap: Record<string, number> = {
+    first_reading: 0,
+    second_reading: 1,
+    second_reading_amendment: 1,
+    committee_of_whole: 2,
+    third_reading: 3,
+    consideration_in_detail: 6,
+    passed: 8,
+    royal_assent: 8,
+  };
+  return (isHouseFirst ? houseFirstMap : senateFirstMap)[stage] ?? -1;
+}
+
+const TERMINAL_STAGES = new Set(["withdrawn", "lapsed", "defeated"]);
+
+function BillPipeline({
+  stage,
+  parliamentId,
+}: {
+  stage: string | null;
+  parliamentId: string;
+}) {
+  const isHouseFirst = parliamentId !== "fed_sen";
+  const steps = isHouseFirst ? HOUSE_FIRST_STEPS : SENATE_FIRST_STEPS;
+  const currentIndex = getStageIndex(stage, isHouseFirst);
+
+  const isTerminal = stage ? TERMINAL_STAGES.has(stage) : false;
+
+  const chamberSections = [
+    { label: isHouseFirst ? "House of Representatives" : "Senate", color: isHouseFirst ? "green" : "red", range: [0, 3] as [number, number] },
+    { label: isHouseFirst ? "Senate" : "House of Representatives", color: isHouseFirst ? "red" : "green", range: [4, 7] as [number, number] },
+    { label: "Royal Assent", color: "gray", range: [8, 8] as [number, number] },
+  ];
+
+  return (
+    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+      <h2 className="text-sm font-semibold text-gray-700 mb-4">Bill Progress</h2>
+
+      {isTerminal && stage && (
+        <div className="mb-3 text-sm px-3 py-2 bg-orange-50 border border-orange-200 rounded text-orange-700 font-medium">
+          {stage === "withdrawn" && "Bill withdrawn — will not proceed further."}
+          {stage === "lapsed" && "Bill lapsed — would need to be reintroduced."}
+          {stage === "defeated" && "Bill defeated — cannot proceed without reintroduction."}
+        </div>
+      )}
+
+      <div className="space-y-5">
+        {chamberSections.map((section) => {
+          const sectionSteps = steps.slice(section.range[0], section.range[1] + 1);
+          const colorClass = section.color === "green"
+            ? "text-[#006945] border-[#006945]"
+            : section.color === "red"
+            ? "text-[#C1121F] border-[#C1121F]"
+            : "text-gray-500 border-gray-300";
+          const bgClass = section.color === "green"
+            ? "bg-[#006945]"
+            : section.color === "red"
+            ? "bg-[#C1121F]"
+            : "bg-gray-400";
+
+          return (
+            <div key={section.label}>
+              <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${section.color === "gray" ? "text-gray-400" : section.color === "green" ? "text-[#006945]" : "text-[#C1121F]"}`}>
+                {section.label}
+              </p>
+              <div className="space-y-0">
+                {sectionSteps.map((step, i) => {
+                  const globalIndex = section.range[0] + i;
+                  const isDone = !isTerminal && currentIndex >= 0 && globalIndex < currentIndex;
+                  const isCurrent = !isTerminal && globalIndex === currentIndex;
+                  const isPending = isTerminal || currentIndex < 0 || globalIndex > currentIndex;
+                  const isLast = i === sectionSteps.length - 1;
+
+                  return (
+                    <div key={step.label + globalIndex} className="flex items-stretch gap-3">
+                      {/* Dot + connector line */}
+                      <div className="flex flex-col items-center" style={{ width: 20 }}>
+                        <div className={`w-4 h-4 rounded-full shrink-0 flex items-center justify-center mt-0.5 ${
+                          isCurrent
+                            ? `ring-2 ring-offset-1 ${colorClass} ${bgClass}`
+                            : isDone
+                            ? bgClass
+                            : "bg-white border-2 border-gray-300"
+                        }`}>
+                          {isDone && (
+                            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10">
+                              <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </div>
+                        {!isLast && (
+                          <div className={`w-px flex-1 mt-0.5 ${isDone || isCurrent ? bgClass : "bg-gray-200"}`} style={{ minHeight: 16 }} />
+                        )}
+                      </div>
+
+                      {/* Step label */}
+                      <div className="pb-3 flex-1">
+                        <p className={`text-sm ${
+                          isCurrent
+                            ? "font-semibold text-gray-900"
+                            : isDone
+                            ? "text-gray-500"
+                            : "text-gray-400"
+                        }`}>
+                          {step.label}
+                          {isCurrent && (
+                            <span className={`ml-2 text-xs font-medium px-1.5 py-0.5 rounded ${
+                              section.color === "green" ? "bg-green-50 text-[#006945]" : section.color === "red" ? "bg-red-50 text-[#C1121F]" : "bg-gray-100 text-gray-500"
+                            }`}>
+                              Current
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Stage descriptions ──────────────────────────────────────────────────────
+
+const STAGE_INFO: Record<string, { description: string; next: string | null }> = {
   first_reading: {
-    label: "First Reading",
     description:
-      "The bill has been formally introduced and tabled in the chamber. No debate has taken place yet — this is purely procedural.",
+      "The bill has been formally introduced and tabled — no debate yet. This is purely procedural.",
     next: "Second Reading — debate on the bill's general principles",
   },
   second_reading: {
-    label: "Second Reading",
     description:
       "Members are debating whether the chamber should in principle agree to the bill. Speeches focus on the overall purpose and policy, not specific clauses.",
     next: "Consideration in Detail or Committee of the Whole — clause-by-clause examination",
   },
   second_reading_amendment: {
-    label: "Second Reading Amendment",
     description:
-      "An amendment to the second reading motion is being debated. This is often used to express concerns about the bill or refer it to a committee.",
+      "An amendment to the second reading motion is being debated, often to express concerns or refer the bill to a committee.",
     next: "Second Reading vote",
   },
   consideration_in_detail: {
-    label: "Consideration in Detail",
     description:
-      "The House of Representatives is examining the bill clause by clause. Members can propose and debate specific amendments to the text.",
-    next: "Third Reading — final vote before the bill moves to the Senate",
+      "The House is examining the bill clause by clause. Members can propose and debate specific amendments to the text.",
+    next: "Third Reading — final House vote before the bill moves to the Senate",
   },
   committee_of_whole: {
-    label: "Committee of the Whole",
     description:
       "The Senate is examining the bill clause by clause. Senators can propose amendments, and debate can be wide-ranging.",
     next: "Third Reading — final Senate vote",
   },
   third_reading: {
-    label: "Third Reading",
     description:
-      "The bill has cleared its committee stage. This is the final vote in the current chamber before it passes to the other chamber (or receives Royal Assent if it has passed both).",
+      "The final vote in the current chamber. If passed, the bill moves to the other chamber or — if both have agreed — receives Royal Assent.",
     next: "Other chamber / Royal Assent",
   },
   passed: {
-    label: "Passed",
     description:
-      "Both the House and the Senate have agreed to the bill in the same form. It is now awaiting the Governor-General's signature to become law.",
+      "Both chambers have agreed to the bill in the same form. It is now awaiting the Governor-General's signature to become law.",
     next: "Royal Assent — becomes an Act of Parliament",
   },
   royal_assent: {
-    label: "Royal Assent",
     description:
-      "The Governor-General has given Royal Assent. The bill is now an Act of Parliament and has the force of law.",
+      "The Governor-General has signed the bill. It is now an Act of Parliament with the force of law.",
     next: null,
   },
   withdrawn: {
-    label: "Withdrawn",
     description: "The bill has been withdrawn by its sponsor and will not proceed further.",
     next: null,
   },
   lapsed: {
-    label: "Lapsed",
     description:
-      "The bill lapsed at the end of a parliamentary term or session without being passed. It would need to be reintroduced to proceed.",
+      "The bill lapsed at the end of a parliamentary term without being passed. It would need to be reintroduced to proceed.",
     next: null,
   },
   defeated: {
-    label: "Defeated",
-    description: "The bill was voted down. It cannot proceed further without being reintroduced.",
+    description: "The bill was voted down and cannot proceed without being reintroduced.",
     next: null,
   },
 };
 
-function stageInfo(stage: string | null) {
-  if (!stage) return null;
-  return STAGE_INFO[stage] ?? {
-    label: stage.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-    description: null,
-    next: null,
-  };
-}
+// ─── Page ────────────────────────────────────────────────────────────────────
 
 export default async function BillPage({
   params,
@@ -92,7 +243,7 @@ export default async function BillPage({
 
   const { data: bill } = await supabase
     .from("bills")
-    .select("*, members(name_display, party_id, parties(name, short_name, colour_hex))")
+    .select("*, sitting_days(sitting_date), members(name_display, party_id, parties(name, short_name, colour_hex))")
     .eq("id", id)
     .single();
 
@@ -104,15 +255,21 @@ export default async function BillPage({
     .eq("bill_id", id)
     .order("occurred_at");
 
-  const info = stageInfo(bill.bill_stage);
   const member = bill.members as {
     name_display: string;
     party_id: string | null;
     parties?: { name: string; short_name: string; colour_hex: string | null } | null;
   } | null;
 
-  const ago = bill.introduced_date
-    ? formatDistanceToNowStrict(parseISO(bill.introduced_date), { addSuffix: true })
+  const sittingDay = bill.sitting_days as { sitting_date: string } | null;
+  const dateStr = sittingDay?.sitting_date ?? bill.introduced_date;
+  const ago = dateStr
+    ? formatDistanceToNowStrict(parseISO(dateStr), { addSuffix: true })
+    : null;
+
+  const stageInfo = bill.bill_stage ? STAGE_INFO[bill.bill_stage] : null;
+  const stageLabel = bill.bill_stage
+    ? (bill.bill_stage.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()))
     : null;
 
   return (
@@ -121,12 +278,13 @@ export default async function BillPage({
         ← Bills
       </Link>
 
+      {/* Title + meta */}
       <div className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <h1 className="text-xl font-bold text-gray-900 leading-snug">{bill.short_title}</h1>
-          {info && (
+          {stageLabel && (
             <span className="shrink-0 text-sm bg-blue-50 text-blue-700 px-2.5 py-1 rounded font-medium">
-              {info.label}
+              {stageLabel}
             </span>
           )}
         </div>
@@ -142,53 +300,53 @@ export default async function BillPage({
               {member.parties && <PartyBadge party={member.parties} />}
             </span>
           )}
-          {bill.introduced_date && (
+          {dateStr && (
             <span>
-              {format(parseISO(bill.introduced_date), "d MMMM yyyy")}
+              {format(parseISO(dateStr), "d MMMM yyyy")}
               {ago && <span className="text-gray-400"> · {ago}</span>}
             </span>
+          )}
+          {bill.source_url && (
+            <a
+              href={bill.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              View on APH →
+            </a>
           )}
         </div>
       </div>
 
-      {info && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">Current stage: {info.label}</h2>
-          {info.description && (
-            <p className="text-sm text-gray-600 leading-relaxed">{info.description}</p>
-          )}
-          {info.next && (
+      {/* Pipeline */}
+      <BillPipeline stage={bill.bill_stage} parliamentId={bill.parliament_id} />
+
+      {/* Stage explanation */}
+      {stageInfo && (
+        <div className="space-y-1.5">
+          <h2 className="text-sm font-semibold text-gray-700">What happens at this stage</h2>
+          <p className="text-sm text-gray-600 leading-relaxed">{stageInfo.description}</p>
+          {stageInfo.next && (
             <p className="text-sm text-gray-500">
-              <span className="font-medium">Next:</span> {info.next}
+              <span className="font-medium">Next:</span> {stageInfo.next}
             </p>
-          )}
-          {!info.next && (
-            <p className="text-sm text-gray-400 italic">No further stages.</p>
           )}
         </div>
       )}
 
+      {/* AI summary */}
       {bill.ai_summary && (
-        <div>
-          <h2 className="text-sm font-semibold text-gray-700 mb-1">Summary</h2>
+        <div className="space-y-1.5">
+          <h2 className="text-sm font-semibold text-gray-700">Summary</h2>
           <p className="text-sm text-gray-600 leading-relaxed">{bill.ai_summary}</p>
         </div>
       )}
 
-      {bill.source_url && (
-        <a
-          href={bill.source_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block text-sm text-blue-600 hover:underline"
-        >
-          View on APH →
-        </a>
-      )}
-
+      {/* Related divisions */}
       {divisions && divisions.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
             Divisions on this bill
           </h2>
           <div className="space-y-2">
@@ -207,11 +365,9 @@ export default async function BillPage({
                       {" – "}
                       <span className="text-red-600 font-medium">{div.noes_count}</span>
                     </span>
-                    <span
-                      className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                        passed ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-                      }`}
-                    >
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                      passed ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                    }`}>
                       {passed ? "PASSED" : "DEFEATED"}
                     </span>
                   </div>

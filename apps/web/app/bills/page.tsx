@@ -8,7 +8,7 @@ export const revalidate = 3600;
 const STAGE_INFO: Record<string, { label: string; description: string; next: string | null }> = {
   first_reading: {
     label: "First Reading",
-    description: "The bill has been introduced and tabled — no debate yet.",
+    description: "Introduced and tabled — no debate yet.",
     next: "Second Reading",
   },
   second_reading: {
@@ -33,32 +33,32 @@ const STAGE_INFO: Record<string, { label: string; description: string; next: str
   },
   third_reading: {
     label: "Third Reading",
-    description: "The final vote before the bill passes to the other chamber or receives assent.",
+    description: "Final vote before the bill moves to the other chamber or receives assent.",
     next: "Other chamber / Royal Assent",
   },
   passed: {
     label: "Passed",
-    description: "The bill has been passed by both chambers and is awaiting Royal Assent.",
+    description: "Both chambers have agreed to the bill — awaiting Royal Assent.",
     next: "Royal Assent",
   },
   royal_assent: {
     label: "Royal Assent",
-    description: "The Governor-General has signed the bill into law.",
+    description: "Signed by the Governor-General — now an Act of Parliament.",
     next: null,
   },
   withdrawn: {
     label: "Withdrawn",
-    description: "The bill has been withdrawn by its sponsor.",
+    description: "Withdrawn by its sponsor.",
     next: null,
   },
   lapsed: {
     label: "Lapsed",
-    description: "The bill lapsed at the end of a parliamentary term without being passed.",
+    description: "Lapsed at the end of a parliamentary term without being passed.",
     next: null,
   },
   defeated: {
     label: "Defeated",
-    description: "The bill was voted down and will not proceed further.",
+    description: "Voted down — cannot proceed without being reintroduced.",
     next: null,
   },
 };
@@ -72,60 +72,30 @@ function stageInfo(stage: string | null) {
   };
 }
 
-export default async function BillsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ parliament?: string }>;
-}) {
-  const { parliament: parliamentParam } = await searchParams;
-  const parliamentId = parliamentParam === "fed_sen" ? "fed_sen" : "fed_hor";
-
+export default async function BillsPage() {
   const supabase = createClient();
 
   const { data: bills } = await supabase
     .from("bills")
     .select(
-      "id, short_title, bill_stage, introduced_date, introduced_by, members(name_display, party_id, parties(name, short_name, colour_hex))"
+      "id, short_title, bill_stage, introduced_date, parliament_id, sitting_days(sitting_date), members(name_display, party_id, parties(name, short_name, colour_hex))"
     )
-    .eq("parliament_id", parliamentId)
-    .order("introduced_date", { ascending: false })
+    .in("parliament_id", ["fed_hor", "fed_sen"])
+    .order("sitting_day_id", { ascending: false })
     .limit(200);
 
-  // Group by introduced_date
+  // Group by sitting date (fall back to introduced_date)
   const grouped = new Map<string, typeof bills>();
   for (const bill of bills ?? []) {
-    const date = bill.introduced_date ?? "unknown";
+    const sittingDay = bill.sitting_days as { sitting_date: string } | null;
+    const date = sittingDay?.sitting_date ?? bill.introduced_date ?? "unknown";
     if (!grouped.has(date)) grouped.set(date, []);
     grouped.get(date)!.push(bill);
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Bills</h1>
-        <div className="flex gap-2">
-          <Link
-            href="/bills"
-            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-              parliamentId === "fed_hor"
-                ? "bg-[#006945] text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
-            House
-          </Link>
-          <Link
-            href="/bills?parliament=fed_sen"
-            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-              parliamentId === "fed_sen"
-                ? "bg-[#C1121F] text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
-            Senate
-          </Link>
-        </div>
-      </div>
+      <h1 className="text-2xl font-bold">Bills</h1>
 
       {grouped.size === 0 && (
         <p className="text-gray-500 text-sm">No bills found.</p>
@@ -144,9 +114,12 @@ export default async function BillsPage({
                 party_id: string | null;
                 parties?: { name: string; short_name: string; colour_hex: string | null } | null;
               } | null;
-              const ago = bill.introduced_date
-                ? formatDistanceToNowStrict(parseISO(bill.introduced_date), { addSuffix: true })
+              const sittingDay = bill.sitting_days as { sitting_date: string } | null;
+              const dateForAgo = sittingDay?.sitting_date ?? bill.introduced_date;
+              const ago = dateForAgo
+                ? formatDistanceToNowStrict(parseISO(dateForAgo), { addSuffix: true })
                 : null;
+              const chamberLabel = bill.parliament_id === "fed_sen" ? "Senate" : "House";
 
               return (
                 <Link
@@ -173,6 +146,13 @@ export default async function BillsPage({
                           {info.label}
                         </span>
                       )}
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                        bill.parliament_id === "fed_sen"
+                          ? "bg-red-50 text-red-700"
+                          : "bg-green-50 text-green-700"
+                      }`}>
+                        {chamberLabel}
+                      </span>
                       {ago && (
                         <span className="text-xs text-gray-400">{ago}</span>
                       )}
