@@ -319,6 +319,14 @@ export default async function BillPage({
         </div>
       </div>
 
+      {/* AI summary */}
+      {bill.ai_summary && (
+        <div className="space-y-1.5">
+          <h2 className="text-sm font-semibold text-gray-700">Summary</h2>
+          <p className="text-sm text-gray-600 leading-relaxed">{bill.ai_summary}</p>
+        </div>
+      )}
+
       {/* Pipeline */}
       <BillPipeline stage={bill.bill_stage} parliamentId={bill.parliament_id} />
 
@@ -332,14 +340,6 @@ export default async function BillPage({
               <span className="font-medium">Next:</span> {stageInfo.next}
             </p>
           )}
-        </div>
-      )}
-
-      {/* AI summary */}
-      {bill.ai_summary && (
-        <div className="space-y-1.5">
-          <h2 className="text-sm font-semibold text-gray-700">Summary</h2>
-          <p className="text-sm text-gray-600 leading-relaxed">{bill.ai_summary}</p>
         </div>
       )}
 
