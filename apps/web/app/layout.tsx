@@ -51,6 +51,7 @@ export default async function RootLayout({
               <nav className="flex gap-6 text-sm text-gray-600">
                 <a href="/calendar" className="hover:text-gray-900">Calendar</a>
                 <a href="/divisions" className="hover:text-gray-900">Divisions</a>
+                <a href="/bills" className="hover:text-gray-900">Bills</a>
                 <a href="/members" className="hover:text-gray-900">Members</a>
                 <a href="/podcast" className="hover:text-gray-900">Podcast</a>
               </nav>
