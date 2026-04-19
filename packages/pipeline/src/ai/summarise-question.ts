@@ -18,6 +18,7 @@ export async function summariseQuestion(
     HAIKU,
     `You are summarising question time exchanges in the Australian Parliament for a general audience.
 Be neutral and factual. Focus on what was asked and what the minister's substantive response was (if any).
+Use gender-neutral pronouns (they/them) when referring to ministers or members.
 Always output valid JSON.`,
     `Question from: ${input.askerName} (${input.askerParty})
 To: ${input.ministerName} (${input.ministerParty}${input.ministerRole ? `, ${input.ministerRole}` : ""})
