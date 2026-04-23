@@ -290,8 +290,27 @@ function BillCard({ bill }: { bill: BillRow }) {
   const ago = dateForAgo
     ? formatDistanceToNowStrict(parseISO(dateForAgo), { addSuffix: true })
     : null;
-  const currentParl = bill.sitting_days?.parliament_id ?? bill.parliament_id;
-  const chamberLabel = currentParl === "fed_sen" ? "Senate" : "House";
+  const originParl = bill.parliament_id;
+  const currentParl = bill.sitting_days?.parliament_id ?? originParl;
+  const crossedChambers = currentParl !== originParl;
+
+  function chamberPill(parl: string, label: string, muted = false) {
+    const isSenate = parl === "fed_sen";
+    if (muted) {
+      return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-400">
+          {label}
+        </span>
+      );
+    }
+    return (
+      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+        isSenate ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"
+      }`}>
+        {label}
+      </span>
+    );
+  }
 
   return (
     <Link
@@ -313,13 +332,19 @@ function BillCard({ bill }: { bill: BillRow }) {
             </>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-            currentParl === "fed_sen" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"
-          }`}>
-            {chamberLabel}
-          </span>
-          {ago && <span className="text-xs text-gray-400">{ago}</span>}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {crossedChambers ? (
+            <>
+              {chamberPill(originParl, originParl === "fed_sen" ? "Senate" : "House", true)}
+              <svg className="w-3 h-3 text-gray-300 shrink-0" fill="none" viewBox="0 0 12 12">
+                <path d="M2 6h8M7 3l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              {chamberPill(currentParl, currentParl === "fed_sen" ? "Senate" : "House")}
+            </>
+          ) : (
+            chamberPill(currentParl, currentParl === "fed_sen" ? "Senate" : "House")
+          )}
+          {ago && <span className="text-xs text-gray-400 ml-0.5">{ago}</span>}
         </div>
       </div>
     </Link>

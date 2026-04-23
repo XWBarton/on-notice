@@ -5,7 +5,10 @@
  * Usage: ts-node src/index.ts [--parliament fed_hor] [--date 2025-04-09] [--skip-audio]
  */
 
-import { parseArgs } from "node:util";
+import { execFile } from "node:child_process";
+import { parseArgs, promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 import { format } from "date-fns";
 import { db } from "./db/client";
 import { PARLIAMENTS, FEDERAL_PARTIES } from "./config";
@@ -16,6 +19,7 @@ import { parseDebates, parseDebatesXml } from "./parsers/hansard-xml";
 import { classifyQuestion, getMemberLookup, resetMemberCache } from "./parsers/questions";
 import { buildTranscript, buildTranscriptFromExchange } from "./parsers/transcript";
 import { summariseBill } from "./ai/summarise-bill";
+import { fetchBillMemo, closeParlInfoBrowser } from "./scrapers/parlinfo";
 import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
 import { summariseDivision } from "./ai/summarise-division";
@@ -431,11 +435,16 @@ async function run() {
     // Sequential to avoid Claude rate limits
     const enrichedBills: Array<{ title: string; party: string | null; summary: string | null }> = [];
     for (const bill of allBills) {
+      console.log(`  Fetching EM for: ${bill.shortTitle}`);
+      const memoText = await fetchBillMemo(bill.shortTitle);
+      if (memoText) console.log(`  EM fetched (${memoText.length} chars)`);
+
       const summary = await summariseBill({
         shortTitle: bill.shortTitle,
         introducerName: bill.introducerName,
         introducerParty: null,
         introductionText: bill.introductionText,
+        memoText,
         parliament: config.name,
         date,
       }).catch((e) => {
@@ -834,11 +843,7 @@ async function run() {
             );
             console.log(`  Episode built: ${Math.round(durationSec / 60)}min`);
 
-            // 8h: Upload episode + chapters.json to R2
-            const audioUrl = await uploadEpisode(episodePath, parliamentId, date);
-            console.log(`  Uploaded episode: ${audioUrl}`);
-
-            // Build and upload Podcast 2.0 chapters JSON (real questions only, with real timestamps)
+            // 8h: Build chapters, embed as ID3 CHAP frames, upload episode + chapters.json to R2
             const siteUrl = process.env.APP_URL ?? "https://on-notice.xyz";
             const chaptersData = {
               version: "1.2.0",
@@ -868,6 +873,31 @@ async function run() {
                   };
                 }),
             };
+
+            // Embed ID3 CHAP frames into the MP3 for Apple Podcasts compatibility.
+            // Podcasting 2.0 apps read chapters.json via the RSS tag; Apple Podcasts reads ID3 tags in the file.
+            if (chaptersData.chapters.length > 0) {
+              const escMeta = (s: string) => s.replace(/\\/g, "\\\\").replace(/=/g, "\\=").replace(/;/g, "\\;").replace(/\n/g, "\\n");
+              const metaLines = [";FFMETADATA1"];
+              for (let i = 0; i < chaptersData.chapters.length; i++) {
+                const ch = chaptersData.chapters[i];
+                const startMs = Math.round(ch.startTime * 1000);
+                const endMs = i + 1 < chaptersData.chapters.length
+                  ? Math.round(chaptersData.chapters[i + 1].startTime * 1000)
+                  : Math.round(durationSec * 1000);
+                metaLines.push("[CHAPTER]", "TIMEBASE=1/1000", `START=${startMs}`, `END=${endMs}`, `title=${escMeta(ch.title)}`, "");
+              }
+              const metadataPath = `${workDir}/ffmetadata.txt`;
+              fs.writeFileSync(metadataPath, metaLines.join("\n"));
+              const episodeWithChaptersPath = `${workDir}/episode_chapters.mp3`;
+              await execFileAsync("ffmpeg", ["-i", episodePath, "-i", metadataPath, "-map_metadata", "1", "-codec", "copy", "-y", episodeWithChaptersPath]);
+              fs.renameSync(episodeWithChaptersPath, episodePath);
+              console.log(`  ID3 chapters embedded: ${chaptersData.chapters.length} chapters`);
+            }
+
+            const audioUrl = await uploadEpisode(episodePath, parliamentId, date);
+            console.log(`  Uploaded episode: ${audioUrl}`);
+
             const chaptersFilePath = `${workDir}/chapters.json`;
             fs.writeFileSync(chaptersFilePath, JSON.stringify(chaptersData));
             await uploadChapters(chaptersFilePath, parliamentId, date);
@@ -945,6 +975,8 @@ async function run() {
       .eq("id", sittingDayId);
 
     process.exit(1);
+  } finally {
+    await closeParlInfoBrowser();
   }
 }
 
