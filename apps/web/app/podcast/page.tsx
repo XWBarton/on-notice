@@ -15,7 +15,7 @@ const FEEDS = [
     id: "fed_sen",
     label: "Senate",
     rssUrl: "https://on-notice.xyz/api/feed.xml?parliament=fed_sen",
-    appleUrl: null,
+    appleUrl: "https://podcasts.apple.com/us/podcast/on-notice-%E2%80%94-senate/id1895307293",
   },
 ];
 
