@@ -16,7 +16,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { db } from "./db/client";
 import { concatenateAudio } from "./audio/editor";
-import { uploadEpisode, uploadChapters } from "./audio/uploader";
+import { uploadEpisode, uploadChapters, fetchMemberClips } from "./audio/uploader";
 
 const execFileAsync = promisify(execFile);
 
@@ -53,7 +53,7 @@ async function processDay(parliamentId: string, date: string) {
 
   const { data: questions, error: qError } = await db
     .from("questions")
-    .select("question_number, subject, asker_name, asker_party, minister_name, minister_party, audio_clip_url")
+    .select("question_number, subject, asker_id, asker_name, asker_party, minister_name, minister_party, audio_clip_url")
     .eq("sitting_day_id", sitting.id)
     .eq("is_dorothy_dixer", false)
     .not("audio_clip_url", "is", null)
@@ -70,8 +70,13 @@ async function processDay(parliamentId: string, date: string) {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), `on-notice-backfill-${date}-`));
 
   try {
-    // Download clips and accumulate chapter start times
-    const clipPaths: string[] = [];
+    // Fetch member intro clips from R2
+    const askerIds = [...new Set(questions.map((q) => q.asker_id).filter(Boolean) as string[])];
+    const memberClipPaths = await fetchMemberClips(askerIds, workDir);
+    console.log(`  Member intro clips: ${memberClipPaths.size}/${askerIds.length}`);
+
+    // Download question clips and accumulate chapter start times
+    const clipParts: string[] = [];
     const chapterStartSecs = new Map<number, number>();
     let episodePosSec = 0;
 
@@ -82,14 +87,21 @@ async function processDay(parliamentId: string, date: string) {
       const duration = await ffprobeDuration(clipPath);
       console.log(`${Math.round(duration)}s`);
 
+      // Prepend member intro clip if available (mirrors what buildEpisode does)
+      const introPath = q.asker_id ? memberClipPaths.get(q.asker_id) : undefined;
+      if (introPath) {
+        clipParts.push(introPath);
+        episodePosSec += await ffprobeDuration(introPath);
+      }
+
       chapterStartSecs.set(q.question_number, Math.round(episodePosSec));
-      clipPaths.push(clipPath);
+      clipParts.push(clipPath);
       episodePosSec += duration;
     }
 
     // Concatenate
     const episodePath = path.join(workDir, "episode.mp3");
-    await concatenateAudio(clipPaths, episodePath, workDir);
+    await concatenateAudio(clipParts, episodePath, workDir);
     const durationSec = Math.round(await ffprobeDuration(episodePath));
     console.log(`  Episode: ${Math.round(durationSec / 60)}min`);
 
