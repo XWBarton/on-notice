@@ -1,0 +1,63 @@
+name: Backfill Podcast Episodes
+
+on:
+  workflow_dispatch:
+    inputs:
+      parliament:
+        description: 'Parliament ID (fed_hor or fed_sen)'
+        required: true
+        default: 'fed_hor'
+      date:
+        description: 'Single date (YYYY-MM-DD)'
+        required: false
+        default: ''
+      from:
+        description: 'Backfill from date (YYYY-MM-DD) — ignored if date is set'
+        required: false
+        default: ''
+
+jobs:
+  backfill:
+    name: Backfill ${{ github.event.inputs.parliament }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Run backfill
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_CDN_URL: ${{ secrets.R2_CDN_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          ARGS="--parliament ${{ github.event.inputs.parliament }}"
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            ARGS="$ARGS --date ${{ github.event.inputs.date }}"
+          elif [ -n "${{ github.event.inputs.from }}" ]; then
+            ARGS="$ARGS --from ${{ github.event.inputs.from }}"
+          else
+            echo "Provide date or from input"
+            exit 1
+          fi
+          npx ts-node packages/pipeline/src/backfill-podcast.ts $ARGS
