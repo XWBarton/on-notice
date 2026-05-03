@@ -2,9 +2,9 @@ name: Nightly Pipeline
 
 on:
   schedule:
-    # 5:30am AWST Mon–Fri = 21:30 UTC Sun–Thu
-    # Pipeline retries video discovery every hour until 7:30am AWST if no video found (up to 2 retries)
-    - cron: '30 21 * * 0-4'
+    # 6:30am AWST Mon–Fri = 22:30 UTC Sun–Thu
+    # Pipeline retries video discovery every hour until 8:30am AWST if no video found (up to 2 retries)
+    - cron: '30 22 * * 0-4'
   workflow_dispatch:
     inputs:
       parliament:
@@ -51,6 +51,15 @@ jobs:
           sudo apt-get install -y ffmpeg libavcodec-extra
           pip install yt-dlp
           which ffmpeg && ffmpeg -encoders 2>&1 | grep -E "mp3|aac|opus|vorbis" || true
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
 
       - name: Restore audio cache
         uses: actions/cache@v4

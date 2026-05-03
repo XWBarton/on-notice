@@ -11,30 +11,33 @@ interface BillSummaryInput {
 }
 
 export async function summariseBill(input: BillSummaryInput): Promise<string> {
-  const hasMemo = !!input.memoText;
-
   const { summary } = await callClaude<{ summary: string }>(
     HAIKU,
-    `You are summarising Australian parliamentary bills for a general audience.
-Be concise, factual, and avoid jargon. State what the bill does, not procedural details.
-Use gender-neutral pronouns (they/them) when referring to ministers or members.
+    `You explain Australian parliamentary bills to a general audience.
+Write in plain English — no jargon, no procedural language. Assume the reader has no legal background.
 Always output valid JSON.`,
     `Parliament: ${input.parliament}
 Bill title: ${input.shortTitle}
 Introduced by: ${input.introducerName ?? "Unknown"}${input.introducerParty ? `, ${input.introducerParty}` : ""}
 Sitting date: ${input.date}
-
-${hasMemo ? `Explanatory Memorandum (official summary prepared by the government):
+${input.memoText ? `
+Explanatory Memorandum — General Outline (official government explanation):
 ---
 ${input.memoText}
 ---
-
-` : ""}Hansard excerpt (bill introduction speech):
+` : `
+Hansard excerpt (introduction speech):
 ---
 ${input.introductionText ?? "(No introduction text available)"}
 ---
+`}
+Write a 3–5 sentence explanation that covers:
+1. What this bill does — the core change it makes
+2. Which existing laws it amends or creates (name them specifically if the outline mentions them)
+3. Why it matters — what problem it solves or what changes for people
 
-Write a 2-3 sentence plain English summary of what this bill proposes to do.${hasMemo ? " Prefer the Explanatory Memorandum as your primary source — it is more precise than the speech." : ""}
+Start with the substance, not with "This bill...". Be specific — name the laws, agencies, or people affected.
+Do not mention the bill title or the word "bill" in the summary.
 Output JSON: {"summary": "..."}`
   );
 
