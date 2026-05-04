@@ -24,7 +24,7 @@ import { summariseQuestion } from "./ai/summarise-question";
 import { summariseDay } from "./ai/summarise-day";
 import { summariseDivision } from "./ai/summarise-division";
 import { brainrotify, brainrotifyDigest } from "./ai/brainrotify";
-import { upsertDivisions } from "./db/upsert-divisions";
+import { upsertDivisions, linkDivisionsToBills } from "./db/upsert-divisions";
 import { findParlViewVideo, questionTimeOffsets, fetchParlViewCaptions, fetchEventChunks, findChunkForTimecode, timecodeToSeconds } from "./scrapers/parlview";
 import { downloadQuestionTimeAudio, createAudioWorkDir } from "./audio/downloader";
 import { buildEpisode, type QuestionSegment } from "./audio/editor";
@@ -471,6 +471,9 @@ async function run() {
       if (error) console.warn(`Bill upsert error: ${error.message}`);
       enrichedBills.push({ title: bill.shortTitle, party: null, summary });
     }
+
+    // Link divisions to their bills now that bills are in the DB
+    await linkDivisionsToBills(sittingDayId);
 
     // Clear stale questions before re-inserting (numbering may have changed between runs)
     await db.from("questions").delete().eq("sitting_day_id", sittingDayId);
