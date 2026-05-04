@@ -7,13 +7,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { date, parliament } = await req.json();
-  if (!date || !parliament) {
-    return NextResponse.json({ error: "Missing date or parliament" }, { status: 400 });
+  const body = await req.json();
+  const { date, parliament } = body;
+
+  if (date && parliament) {
+    revalidatePath(`/${date}`, "page");
+    revalidatePath("/", "page");
   }
 
-  revalidatePath(`/${date}`, "page");
-  revalidatePath("/", "page");
+  // Always revalidate bills section so backfills show immediately
+  revalidatePath("/bills", "page");
+  revalidatePath("/bills/[id]", "page");
 
   return NextResponse.json({ revalidated: true, date, parliament });
 }
