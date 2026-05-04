@@ -15,12 +15,22 @@ function extractBillTitleFromSubject(subject: string): string | null {
 }
 
 /**
- * After bills are upserted for a sitting day, match each division subject
- * to a bill and set the bill_id FK. Safe to call multiple times.
+ * For each division on a sitting day, find a matching bill and set bill_id.
+ * Searches across all bills in the same parliament (not just the same sitting
+ * day) because a bill introduced in one session is often voted on in another.
+ * Safe to call multiple times.
  */
 export async function linkDivisionsToBills(sittingDayId: number) {
+  const { data: sittingDay } = await db
+    .from("sitting_days")
+    .select("parliament_id")
+    .eq("id", sittingDayId)
+    .single();
+
+  if (!sittingDay) return;
+
   const [{ data: bills }, { data: divisions }] = await Promise.all([
-    db.from("bills").select("id, short_title").eq("sitting_day_id", sittingDayId),
+    db.from("bills").select("id, short_title").eq("parliament_id", sittingDay.parliament_id),
     db.from("divisions").select("id, subject").eq("sitting_day_id", sittingDayId),
   ]);
 
