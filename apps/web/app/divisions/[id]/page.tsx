@@ -110,39 +110,45 @@ export default async function DivisionPage({
         />
       </div>
 
-      {/* Party breakdown bar */}
+      {/* Party breakdown — two labelled rows */}
       {total > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Party breakdown</p>
-          <div className="flex rounded-md overflow-hidden h-8 gap-px">
-            {/* Aye side */}
-            {ayeGroups.map((g) => (
-              <div
-                key={`aye-${g.shortName}`}
-                title={`${g.shortName}: ${g.members.length} aye`}
-                style={{
-                  width: `${(g.members.length / total) * 100}%`,
-                  backgroundColor: g.colour,
-                }}
-              />
-            ))}
-            {/* Divider */}
-            <div className="w-px bg-white shrink-0" />
-            {/* Noe side */}
-            {noeGroups.map((g) => (
-              <div
-                key={`noe-${g.shortName}`}
-                title={`${g.shortName}: ${g.members.length} noe`}
-                style={{
-                  width: `${(g.members.length / total) * 100}%`,
-                  backgroundColor: g.colour,
-                  opacity: 0.55,
-                }}
-              />
-            ))}
+
+          {/* Aye row */}
+          <div className="flex items-center gap-2">
+            <span className="w-10 shrink-0 text-xs font-bold text-green-700 text-right">
+              AYE {ayes.length}
+            </span>
+            <div className="flex flex-1 rounded overflow-hidden h-6 gap-px">
+              {ayeGroups.map((g) => (
+                <div
+                  key={g.shortName}
+                  title={`${g.shortName}: ${g.members.length}`}
+                  style={{ width: `${(g.members.length / total) * 100}%`, backgroundColor: g.colour }}
+                />
+              ))}
+            </div>
           </div>
+
+          {/* Noe row */}
+          <div className="flex items-center gap-2">
+            <span className="w-10 shrink-0 text-xs font-bold text-red-600 text-right">
+              NOE {noes.length}
+            </span>
+            <div className="flex flex-1 rounded overflow-hidden h-6 gap-px">
+              {noeGroups.map((g) => (
+                <div
+                  key={g.shortName}
+                  title={`${g.shortName}: ${g.members.length}`}
+                  style={{ width: `${(g.members.length / total) * 100}%`, backgroundColor: g.colour }}
+                />
+              ))}
+            </div>
+          </div>
+
           {/* Legend */}
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 pl-12">
             {[...ayeGroups, ...noeGroups]
               .reduce<PartyGroup[]>((acc, g) => {
                 if (!acc.find((x) => x.shortName === g.shortName)) acc.push(g);
