@@ -71,6 +71,7 @@ export const FEDERAL_PARTIES: Record<string, { id: string; name: string; short_n
   "Katter's Australian Party": { id: "kap", name: "Katter's Australian Party", short_name: "KAP", colour_hex: "#795548" },
   "United Australia Party": { id: "uap", name: "United Australia Party", short_name: "UAP", colour_hex: "#FDD835" },
   "Pauline Hanson's One Nation": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },
+  "Pauline Hanson's One Nation Party": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },
   "One Nation": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },
   "PAULIN": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },
   "ON": { id: "on", name: "One Nation", short_name: "ON", colour_hex: "#E1733C" },

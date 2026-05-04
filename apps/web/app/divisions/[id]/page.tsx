@@ -50,7 +50,7 @@ export default async function DivisionPage({
 
   const { data: division } = await supabase
     .from("divisions")
-    .select("*, sitting_days(sitting_date, parliament_id), bills(short_title, source_url)")
+    .select("*, sitting_days(sitting_date, parliament_id), bills(id, short_title, source_url)")
     .eq("id", id)
     .single();
 
@@ -98,9 +98,9 @@ export default async function DivisionPage({
         {division.bills && (
           <div className="mt-2 text-sm text-gray-500">
             Bill:{" "}
-            <a href={division.bills.source_url ?? "#"} className="text-blue-600 hover:underline">
+            <Link href={`/bills/${division.bills.id}`} className="text-blue-600 hover:underline">
               {division.bills.short_title}
-            </a>
+            </Link>
           </div>
         )}
 
