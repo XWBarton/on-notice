@@ -96,7 +96,10 @@ function normaliseTitle(t: string): string {
  * Fetch the text of an Explanatory Memorandum from ParlInfo for a given bill title.
  * Returns null if no matching EM is found or the fetch fails.
  */
-export async function fetchBillMemo(title: string): Promise<string | null> {
+export async function fetchBillMemo(rawTitle: string): Promise<string | null> {
+  // Strip stage suffix stored in the DB: "Bill 2026; Second Reading" → "Bill 2026"
+  const title = rawTitle.replace(/\s*;\s*.+$/, "").trim();
+
   try {
     const context = await getBrowserContext();
     const page = await context.newPage();
