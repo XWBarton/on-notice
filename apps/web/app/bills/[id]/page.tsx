@@ -233,6 +233,21 @@ const STAGE_INFO: Record<string, { description: string; next: string | null }> =
   },
 };
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function parlInfoEMUrl(title: string): string {
+  // Strip stage suffix ("Bill 2026; Second Reading" → "Bill 2026")
+  const cleanTitle = title.replace(/\s*;\s*.+$/, "").trim();
+  // Use the text inside parentheses + year as the most distinctive keywords
+  const year = cleanTitle.match(/\b(\d{4})$/)?.[1] ?? "";
+  const parenMatch = cleanTitle.match(/\(([^)]+)\)[^(]*$/);
+  const keywords = parenMatch
+    ? `${parenMatch[1].trim()} ${year}`.trim()
+    : cleanTitle.replace(/\s+Bill\s+\d{4}$/, "").trim();
+  const query = `Dataset:ems Title:${keywords}`;
+  return `https://parlinfo.aph.gov.au/parlInfo/search/summary/summary.w3p;query=${encodeURIComponent(query)};sort=dateR`;
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default async function BillPage({
@@ -318,6 +333,14 @@ export default async function BillPage({
               View on APH →
             </a>
           )}
+          <a
+            href={parlInfoEMUrl(bill.short_title)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline"
+          >
+            Explanatory Memorandum →
+          </a>
         </div>
       </div>
 
