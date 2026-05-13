@@ -31,13 +31,13 @@ HOUSE = {
     'parties': [
         ('#009900', 1,  'Greens'),
         ('#E13940', 94, 'Labor'),
-        ('#008B96', 7,  'Teal independents'),
-        ('#808080', 3,  'Other independents'),
+        ('#00B4B4', 6,  'Teal independents'),
+        ('#808080', 4,  'Other independents'),
         ('#4B9FB4', 1,  'Centre Alliance'),
         ('#8B4513', 1,  "Katter's Australian Party"),
-        ('#F36C21', 1,  'One Nation'),
+        ('#F36C21', 2,  'One Nation'),
         ('#006946', 14, 'Nationals'),
-        ('#1C4F9C', 28, 'Liberal'),
+        ('#1C4F9C', 27, 'Liberal'),
     ],
 }
 
@@ -47,7 +47,8 @@ SENATE = {
     'parties': [
         ('#009900', 10, 'Greens'),
         ('#E13940', 29, 'Labor'),
-        ('#808080', 4,  'Independents'),          # Pocock, Thorpe, Payman, Tyrrell
+        ('#808080', 4,  'Independents'), #Thorpe, Payman, Tyrrell
+        ('#00B4B4', 1,  'Teal independents'),              # Pocock, 
         ('#FFD700', 1,  'Jacqui Lambie Network'),
         ('#8B008B', 1,  'United Australia Party'),
         ('#F36C21', 4,  'One Nation'),
