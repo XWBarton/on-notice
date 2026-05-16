@@ -77,7 +77,8 @@ For each question, find TWO timestamps:
 - For unknown questions (no name/${chamber === "senate" ? "state" : "electorate"}): count Speaker calls in order after the last identified question
 ${chamber === "senate" ? "- Senate calls are often brief (e.g. \"Call to Senator Smith\"). Find the FIRST moment the senator is named or called — not when they start speaking." : ""}
 
-2. END (endSecFromQtStart): when the minister finishes answering — the last line of the minister's response, just before the Speaker calls the next questioner or order is called.
+2. END (endSecFromQtStart): when the minister finishes answering ALL parts of the exchange — the last line of the minister's response, just before the Speaker calls the next questioner or order is called.
+- In the Senate, a question often has a supplementary ("Senator X, supplementary?") and a second supplementary ("Senator X, second supplementary?") — these are part of the SAME question, not new questions. Do NOT use a supplementary call as an end boundary. The end must be AFTER all supplementaries are answered, just before the presiding officer calls an entirely different senator for the next numbered question.
 - Look at the lines just BEFORE the next question's Speaker call in the transcript
 - The end is the timestamp of the last substantive speech line before the next Speaker announcement
 - Omit endSecFromQtStart if you cannot confidently identify it

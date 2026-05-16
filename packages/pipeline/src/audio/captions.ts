@@ -120,7 +120,11 @@ function buildSpeakerCallTranscript(
     const isSpeakerCall = SPEAKER_CALL_RE.test(condensed[i].text) ||
       (MEMBER_FOR_RE.test(condensed[i].text) && !RESPONSE_CONTEXT_RE.test(condensed[i].text));
     const isQuestionOpener = /\bmy\s+question\s+is\s+to\s+the\b/i.test(condensed[i].text);
-    if (isSpeakerCall || isQuestionOpener) anchorIndices.add(i);
+    // Senate supplementary calls ("Senator X, supplementary?" / "Senator X, second supplementary?")
+    // are excluded by RESPONSE_CONTEXT_RE but must appear in the transcript so the AI can
+    // correctly set endSecFromQtStart AFTER all supplementaries, not after the primary answer.
+    const isSupplementaryCall = /\bsupplementary\b/i.test(condensed[i].text);
+    if (isSpeakerCall || isQuestionOpener || isSupplementaryCall) anchorIndices.add(i);
   }
 
   // Pass 2: build include set — surrounding window around each anchor
