@@ -365,7 +365,10 @@ async function run() {
     // ── Step 4: Fetch divisions from TVFY ────────────────────────────────────
     console.log("Step 4: Fetching divisions...");
     const tvfyHouse = config.chamber === "lower" ? "representatives" : "senate";
-    const divisions = await fetchDivisionsForDate(date, tvfyHouse as "representatives" | "senate");
+    const divisions = await fetchDivisionsForDate(date, tvfyHouse as "representatives" | "senate").catch((e) => {
+      console.warn(`TVFY divisions unavailable (non-fatal): ${e.message} — continuing without division data`);
+      return [];
+    });
     console.log(`Fetched ${divisions.length} divisions from They Vote For You`);
 
     // Get member lookup function
