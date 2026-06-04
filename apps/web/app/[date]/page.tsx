@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase";
 import { format, parseISO, isFuture, differenceInDays } from "date-fns";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { DivisionCard } from "@/components/DailyFeed/DivisionCard";
 import { DigestCard } from "@/components/DailyFeed/DigestCard";
 import { FeedNav } from "@/components/DailyFeed/FeedNav";
@@ -41,6 +41,12 @@ export default async function DatePage({
   ]);
 
   if (!sittingDay) {
+    // If this parliament has sitting days but not on this exact date, redirect to most recent
+    const latestDate = allDates?.[0]?.sitting_date;
+    if (latestDate && latestDate !== date) {
+      redirect(`/${latestDate}?parliament=${parliamentId}`);
+    }
+
     const isScheduled = !!(SCHEDULED_SITTING_DATES[date]);
     const dateObj = parseISO(date);
     if (isScheduled) {

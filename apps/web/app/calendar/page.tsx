@@ -3,17 +3,22 @@ import { CalendarView, type HouseInfo } from "@/components/Calendar/CalendarView
 
 export const revalidate = 3600;
 
-// Known 2026 federal parliamentary sitting dates (both chambers)
-// Source: PM&C Parliamentary Sittings 2026 (published 26 Nov 2025)
+// Known 2026 federal parliamentary sitting dates, per chamber.
+// Source: PM&C Parliamentary Sittings 2026 (published 26 Nov 2025).
+// Calendar colour key — blue = both houses, green ("H") = HoR only (Senate in
+// estimates), red ("S") = Senate only. Estimates weeks (AE/BE/SBE) are HoR-only
+// chamber days: the Senate is in committee hearings, not the chamber, so there
+// is no Senate chamber Hansard on those days.
 export const SCHEDULED_SITTING_DATES: Record<string, ("fed_hor" | "fed_sen")[]> = {
   // February
   "2026-02-03": ["fed_hor", "fed_sen"],
   "2026-02-04": ["fed_hor", "fed_sen"],
   "2026-02-05": ["fed_hor", "fed_sen"],
-  "2026-02-09": ["fed_hor", "fed_sen"],
-  "2026-02-10": ["fed_hor", "fed_sen"],
-  "2026-02-11": ["fed_hor", "fed_sen"],
-  "2026-02-12": ["fed_hor", "fed_sen"],
+  // Feb 9–12: HoR only — Senate in Additional Estimates (green "H/AE")
+  "2026-02-09": ["fed_hor"],
+  "2026-02-10": ["fed_hor"],
+  "2026-02-11": ["fed_hor"],
+  "2026-02-12": ["fed_hor"],
   // March
   "2026-03-02": ["fed_hor", "fed_sen"],
   "2026-03-03": ["fed_hor", "fed_sen"],
@@ -33,14 +38,16 @@ export const SCHEDULED_SITTING_DATES: Record<string, ("fed_hor" | "fed_sen")[]> 
   "2026-05-12": ["fed_hor", "fed_sen"],
   "2026-05-13": ["fed_hor", "fed_sen"],
   "2026-05-14": ["fed_hor", "fed_sen"],
-  "2026-05-25": ["fed_hor", "fed_sen"],
-  "2026-05-26": ["fed_hor", "fed_sen"],
-  "2026-05-27": ["fed_hor", "fed_sen"],
-  "2026-05-28": ["fed_hor", "fed_sen"],
+  // May 25–28: HoR only — Senate in Budget Estimates (green "H/BE")
+  "2026-05-25": ["fed_hor"],
+  "2026-05-26": ["fed_hor"],
+  "2026-05-27": ["fed_hor"],
+  "2026-05-28": ["fed_hor"],
   // June
-  "2026-06-02": ["fed_hor", "fed_sen"],
-  "2026-06-03": ["fed_hor", "fed_sen"],
-  "2026-06-04": ["fed_hor", "fed_sen"],
+  // June 2–4: HoR only — Senate in Budget Estimates (green "H/BE")
+  "2026-06-02": ["fed_hor"],
+  "2026-06-03": ["fed_hor"],
+  "2026-06-04": ["fed_hor"],
   "2026-06-22": ["fed_hor", "fed_sen"],
   "2026-06-23": ["fed_hor", "fed_sen"],
   "2026-06-24": ["fed_hor", "fed_sen"],
@@ -71,11 +78,17 @@ export const SCHEDULED_SITTING_DATES: Record<string, ("fed_hor" | "fed_sen")[]> 
   "2026-10-13": ["fed_hor", "fed_sen"],
   "2026-10-14": ["fed_hor", "fed_sen"],
   "2026-10-15": ["fed_hor", "fed_sen"],
-  "2026-10-26": ["fed_hor", "fed_sen"],
-  "2026-10-27": ["fed_hor", "fed_sen"],
-  "2026-10-28": ["fed_hor", "fed_sen"],
-  "2026-10-29": ["fed_hor", "fed_sen"],
+  // Oct 26–29: HoR only — Senate in Supplementary Budget Estimates (green "H/SBE")
+  "2026-10-26": ["fed_hor"],
+  "2026-10-27": ["fed_hor"],
+  "2026-10-28": ["fed_hor"],
+  "2026-10-29": ["fed_hor"],
   // November
+  // Nov 16–19: Senate only (red "S")
+  "2026-11-16": ["fed_sen"],
+  "2026-11-17": ["fed_sen"],
+  "2026-11-18": ["fed_sen"],
+  "2026-11-19": ["fed_sen"],
   "2026-11-23": ["fed_hor", "fed_sen"],
   "2026-11-24": ["fed_hor", "fed_sen"],
   "2026-11-25": ["fed_hor", "fed_sen"],

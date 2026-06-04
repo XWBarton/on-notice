@@ -41,6 +41,7 @@ async function run() {
       date: { type: "string", default: new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date(Date.now() - 864e5)) },
       "skip-audio": { type: "boolean", default: false },
       "members-only": { type: "boolean", default: false },
+      force: { type: "boolean", default: false },
     },
   });
 
@@ -56,6 +57,24 @@ async function run() {
   console.log(`Date: ${date}`);
   console.log(`Skip audio: ${skipAudio}`);
   console.log(`========================\n`);
+
+  // ── Idempotency / catch-up guard ────────────────────────────────────────────
+  // The nightly job re-attempts the last few days (OpenAustralia often indexes a
+  // sitting day a day or more after it happens, well after our morning run). Days
+  // already fully processed exit here cheaply so the loop costs almost nothing.
+  // Use --force to reprocess a complete day.
+  if (!values.force) {
+    const { data: existing } = await db
+      .from("sitting_days")
+      .select("pipeline_status")
+      .eq("parliament_id", parliamentId)
+      .eq("sitting_date", date)
+      .maybeSingle();
+    if (existing?.pipeline_status === "complete") {
+      console.log(`${date} already complete — skipping (use --force to reprocess).`);
+      return;
+    }
+  }
 
   // ── Step 1: Sync members (weekly) ───────────────────────────────────────────
   console.log("Step 1: Syncing members...");
