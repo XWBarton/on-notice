@@ -111,19 +111,21 @@ jobs:
         if: failure()
         run: echo "::error::${{ matrix.parliament }} pipeline failed — check logs above"
 
-  # ── WA pipeline (Legislative Assembly) ─────────────────────────────────────
-  # Temporarily disabled on schedule — WA member scrape is returning 403. Still
-  # runs on manual dispatch with a wa_ parliament. To re-enable nightly, restore
-  # `github.event_name == 'schedule' ||` at the start of the `if` below.
+  # ── WA pipeline (Legislative Assembly + Council) ───────────────────────────
+  # Runs on the morning schedule only (6:30am AWST) for both chambers, plus
+  # manual dispatch with a wa_ parliament. Member sync is non-fatal in the
+  # pipeline, so a 403 on parliament.wa.gov.au (GitHub Actions IPs are sometimes
+  # blocked) no longer kills the run — questions and the daily digest still
+  # process from the members already in the DB.
   wa:
     name: ${{ matrix.parliament }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    if: startsWith(github.event.inputs.parliament, 'wa_')
+    if: (github.event_name == 'schedule' && github.event.schedule == '30 22 * * 0-4') || startsWith(github.event.inputs.parliament, 'wa_')
     strategy:
       fail-fast: false
       matrix:
-        parliament: ${{ github.event_name == 'schedule' && fromJSON('["wa_la"]') || fromJSON(format('["{0}"]', github.event.inputs.parliament)) }}
+        parliament: ${{ github.event_name == 'schedule' && fromJSON('["wa_la","wa_lc"]') || fromJSON(format('["{0}"]', github.event.inputs.parliament)) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -164,11 +166,25 @@ jobs:
           APP_URL: ${{ secrets.APP_URL }}
           REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
         run: |
-          ARGS="--parliament ${{ matrix.parliament }}"
+          BASE="--parliament ${{ matrix.parliament }}"
+          if [ "${{ github.event.inputs.skip_audio || 'false' }}" = "true" ]; then BASE="$BASE --skip-audio"; fi
           DATE_ARG="${{ github.event.inputs.date }}"
-          if [ -n "$DATE_ARG" ]; then ARGS="$ARGS --date $DATE_ARG"; fi
-          if [ "${{ github.event.inputs.skip_audio || 'false' }}" = "true" ]; then ARGS="$ARGS --skip-audio"; fi
-          npx ts-node packages/wa-pipeline/src/index.ts $ARGS
+          if [ -n "$DATE_ARG" ]; then
+            # Explicit date (manual dispatch) — process just that day.
+            npx ts-node packages/wa-pipeline/src/index.ts $BASE --date "$DATE_ARG"
+          else
+            # Catch-up: re-attempt the last few sitting days. WA Hansard often
+            # publishes a sitting day's extract a day or more after it happens —
+            # after our morning run — so a single same-day attempt misses it.
+            # Already-complete days exit cheaply via the pipeline's idempotency
+            # guard; days now indexed get backfilled. Per-day failures are
+            # non-fatal so one bad day doesn't block the others.
+            for i in 1 2 3 4; do
+              D=$(TZ=Australia/Perth date -d "$i days ago" +%F 2>/dev/null || TZ=Australia/Perth date -v-${i}d +%F)
+              echo "── Catch-up attempt for $D (${{ matrix.parliament }}) ──"
+              npx ts-node packages/wa-pipeline/src/index.ts $BASE --date "$D" || echo "::warning::${{ matrix.parliament }} $D attempt failed — will retry next run"
+            done
+          fi
 
       - name: Notify on failure
         if: failure()

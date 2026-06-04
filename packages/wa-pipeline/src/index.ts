@@ -2,7 +2,7 @@
  * WA Parliament pipeline
  *
  * Usage:
- *   ts-node src/index.ts [--parliament wa_la|wa_lc] [--date YYYY-MM-DD] [--members-only] [--skip-audio]
+ *   ts-node src/index.ts [--parliament wa_la|wa_lc] [--date YYYY-MM-DD] [--members-only] [--skip-audio] [--force]
  */
 
 import { db } from "./db/client";
@@ -13,7 +13,8 @@ import { downloadHlsAudio } from "./audio/downloader";
 import { uploadEpisode } from "./audio/uploader";
 import { getAudioDuration } from "./audio/duration";
 import { summariseWAQuestion } from "./ai/summarise";
-import { WAParliamentId } from "./config";
+import { summariseWADay } from "./ai/summarise-day";
+import { WA_PARLIAMENTS, WAParliamentId } from "./config";
 import * as path from "path";
 import * as os from "os";
 
@@ -138,13 +139,18 @@ async function resolveMemberId(lastName: string, parliamentId: WAParliamentId): 
 // Site revalidation
 // ---------------------------------------------------------------------------
 
-async function revalidateSite() {
+async function revalidateSite(parliamentId: WAParliamentId, date: string) {
   const appUrl = process.env.APP_URL;
   const secret = process.env.REVALIDATE_SECRET;
   if (!appUrl || !secret) return;
   try {
-    await fetch(`${appUrl}/api/revalidate?secret=${secret}`);
-    console.log("  Site revalidated");
+    const res = await fetch(`${appUrl}/api/revalidate`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-revalidate-token": secret },
+      body: JSON.stringify({ date, parliament: parliamentId }),
+    });
+    if (res.ok) console.log("  Site revalidated");
+    else console.warn(`  Revalidation returned ${res.status} (non-fatal)`);
   } catch {
     console.warn("  Revalidation request failed (non-fatal)");
   }
@@ -160,6 +166,7 @@ async function main() {
     (args[args.indexOf("--parliament") + 1] as WAParliamentId) ?? "wa_la";
   const membersOnly = args.includes("--members-only");
   const skipAudio = args.includes("--skip-audio");
+  const force = args.includes("--force");
 
   // Date: explicit arg or yesterday (WA time, UTC+8)
   let date: string;
@@ -175,9 +182,35 @@ async function main() {
 
   console.log(`\n=== WA Pipeline: ${parliamentId} / ${date} ===\n`);
 
+  // Idempotency / catch-up guard.
+  // The nightly job re-attempts the last few days (WA Hansard often indexes a
+  // sitting day a day or more after it happens, after our morning run). Days
+  // already fully processed exit here cheaply so the loop costs almost nothing.
+  // Use --force to reprocess a complete day.
+  if (!force && !membersOnly) {
+    const { data: existing } = await db
+      .from("sitting_days")
+      .select("pipeline_status")
+      .eq("parliament_id", parliamentId)
+      .eq("sitting_date", date)
+      .maybeSingle();
+    if ((existing as { pipeline_status?: string } | null)?.pipeline_status === "complete") {
+      console.log(`${date} already complete — skipping (use --force to reprocess).`);
+      return;
+    }
+  }
+
   // 1. Sync members
   console.log("Step 1: Syncing members...");
-  await syncWAMembers();
+  try {
+    await syncWAMembers();
+  } catch (err) {
+    if (membersOnly) throw err;
+    // parliament.wa.gov.au sometimes 403s GitHub Actions IPs. Members change
+    // rarely and are synced weekly, so a failure here is non-fatal — carry on
+    // with whoever is already in the DB.
+    console.warn(`  Member sync failed (non-fatal): ${(err as Error).message} — continuing with existing members`);
+  }
   if (membersOnly) { console.log("Members-only mode — done."); return; }
 
   // 2. Check for sitting day
@@ -233,6 +266,7 @@ async function main() {
 
   // 5b. AI summaries
   console.log("\nStep 5b: Generating AI summaries...");
+  const enrichedQuestions: Array<{ asker: string; minister: string; subject: string | null; summary: string | null }> = [];
   for (const q of allQuestions) {
     if (!q.questionText && !q.answerText) continue;
     try {
@@ -247,10 +281,37 @@ async function main() {
       await (db as any).from("questions").update({ ai_summary: summary })
         .eq("sitting_day_id", sittingDayId)
         .eq("question_number", q.number);
+      enrichedQuestions.push({ asker: q.asker, minister: q.minister, subject: q.subject || null, summary });
       console.log(`  Q${q.number}: summarised`);
     } catch (err) {
       console.warn(`  Q${q.number}: AI summary failed (non-fatal):`, err);
     }
+  }
+
+  // 5c. Daily digest
+  console.log("\nStep 5c: Generating daily digest...");
+  try {
+    const digest = await summariseWADay({
+      date,
+      chamber: WA_PARLIAMENTS[parliamentId].name,
+      questions: enrichedQuestions,
+    });
+    if (digest.lede || digest.digest) {
+      await db.from("daily_digests").upsert(
+        {
+          sitting_day_id: sittingDayId,
+          lede: digest.lede,
+          ai_summary: digest.digest,
+          generated_at: new Date().toISOString(),
+        },
+        { onConflict: "sitting_day_id" }
+      );
+      console.log("  Daily digest stored");
+    } else {
+      console.log("  Daily digest empty — skipped");
+    }
+  } catch (err) {
+    console.warn("  Daily digest failed (non-fatal):", err);
   }
 
   // 6. Audio pipeline
@@ -292,7 +353,7 @@ async function main() {
   }
 
   // 7. Revalidate site
-  await revalidateSite();
+  await revalidateSite(parliamentId, date);
   console.log("\n=== WA Pipeline complete ===");
 }
 
