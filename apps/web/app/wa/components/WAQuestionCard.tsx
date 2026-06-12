@@ -15,6 +15,10 @@ interface WAQuestionCardProps {
       party_id: string | null;
       parties: { short_name: string; colour_hex: string } | null;
     } | null;
+    minister: {
+      name_display: string;
+      parties: { short_name: string; colour_hex: string } | null;
+    } | null;
   };
 }
 
@@ -56,13 +60,29 @@ export function WAQuestionCard({ question }: WAQuestionCardProps) {
         <span className="font-medium text-gray-800">
           {question.asker?.name_display ?? "Unknown"}
         </span>
-        {question.minister_name && (
+        {(question.minister || question.minister_name) && (
           <>
             <span className="text-gray-400">→</span>
-            <span className="text-gray-600">{question.minister_name}</span>
+            {question.minister ? (
+              <>
+                {question.minister.parties && (
+                  <PartyBadge
+                    short_name={question.minister.parties.short_name}
+                    colour_hex={question.minister.parties.colour_hex}
+                  />
+                )}
+                <span className="text-gray-600">{question.minister.name_display}</span>
+              </>
+            ) : (
+              <span className="text-gray-600">{question.minister_name}</span>
+            )}
           </>
         )}
       </div>
+
+      {question.minister && question.minister_name && (
+        <p className="text-xs text-gray-400 mb-1">Asked of {question.minister_name}</p>
+      )}
 
       {question.subject && (
         <p className="font-medium text-gray-900 text-sm mb-1.5">{question.subject}</p>

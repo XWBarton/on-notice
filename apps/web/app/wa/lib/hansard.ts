@@ -60,31 +60,43 @@ async function fetchQWNSections(date: string): Promise<number[]> {
     return [];
   }
 
-  // Find the "Questions without notice" block in the TOC and extract
+  // Find the "Questions without notice" blocks in the TOC and extract
   // section hrefs like /hansard/daily/lh/2026-03-19/31
-  const qwnBlock = extractQWNBlock(html);
-  if (!qwnBlock) return [];
-
   const sectionRe = /\/hansard\/daily\/lh\/[\d-]+\/(\d+)/g;
   const sections: number[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = sectionRe.exec(qwnBlock)) !== null) {
-    const n = parseInt(m[1], 10);
-    if (!sections.includes(n)) sections.push(n);
+  for (const qwnBlock of extractQWNBlocks(html)) {
+    let m: RegExpExecArray | null;
+    while ((m = sectionRe.exec(qwnBlock)) !== null) {
+      const n = parseInt(m[1], 10);
+      if (!sections.includes(n)) sections.push(n);
+    }
+    sectionRe.lastIndex = 0;
   }
   return sections;
 }
 
 /**
- * Locate the "Questions without notice" list in the TOC HTML.
- * Returns the substring covering the QWN <li> block.
+ * Locate the "Questions without notice" lists in the TOC HTML.
+ * Skips "Questions without Notice—Answers" items (tabled answers to earlier
+ * questions, not the QWN proceedings) and returns a substring per real block.
  */
-function extractQWNBlock(html: string): string | null {
+function extractQWNBlocks(html: string): string[] {
   const lower = html.toLowerCase();
-  const idx = lower.indexOf("questions without notice");
-  if (idx === -1) return null;
-  // Grab a generous chunk of HTML after the match
-  return html.slice(idx, idx + 8000);
+  const marker = "questions without notice";
+  const blocks: string[] = [];
+  let searchFrom = 0;
+  while (true) {
+    const idx = lower.indexOf(marker, searchFrom);
+    if (idx === -1) break;
+    searchFrom = idx + marker.length;
+    const tail = lower.slice(idx + marker.length, idx + marker.length + 16);
+    if (tail.startsWith("—answers") || tail.startsWith("&#x2014;answers") || tail.startsWith("&mdash;answers")) continue;
+    // The block runs until the next proceeding's TOC button — QWN lists can
+    // be long, so a fixed window truncates later questions.
+    const blockEnd = lower.indexOf("btn-toc-procexpander", idx + marker.length);
+    blocks.push(html.slice(idx, blockEnd === -1 ? idx + 60000 : blockEnd));
+  }
+  return blocks;
 }
 
 /**
@@ -150,7 +162,7 @@ function parseQuestionsXML(xml: string): WAQuestion[] {
       allTexts.push(tm[1]);
     }
     const contentTexts = allTexts.filter((t) => !/^\s*\d+\./.test(stripTags(t)));
-    const text = contentTexts.map((t) => stripTags(t).trim()).filter(Boolean).join(" ");
+    const text = contentTexts.map((t) => stripTags(t).trim()).filter(Boolean).join("\n");
 
     talkers.push({
       kind: kindMatch?.[1] ?? "",
@@ -188,6 +200,14 @@ function stripTags(s: string): string {
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
-    .replace(/\s+/g, " ");
+    // Hansard tab-delimits numbered sub-questions: "(1)\tWhat was…".
+    // Break each onto its own line so transcripts render as a list.
+    .replace(/(\(\d+\)(?:\s*[–—-]\s*\(\d+\))?)\t/g, "\n$1 ")
+    .replace(/\t/g, " ")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ ?\n ?/g, "\n");
 }

@@ -14,7 +14,8 @@ import { uploadEpisode } from "./audio/uploader";
 import { getAudioDuration } from "./audio/duration";
 import { summariseWAQuestion } from "./ai/summarise";
 import { summariseWADay } from "./ai/summarise-day";
-import { WA_PARLIAMENTS, WAParliamentId } from "./config";
+import { WA_PARLIAMENTS, WA_GOVERNMENT_PARTIES, WAParliamentId } from "./config";
+import { detectWADorothyDixer } from "./ai/detect-dixer";
 import * as path from "path";
 import * as os from "os";
 
@@ -27,6 +28,7 @@ interface WAQuestion {
   subject: string;
   asker: string;
   minister: string;
+  answerer: string;
   questionText: string;
   answerText: string;
 }
@@ -44,16 +46,32 @@ async function fetchQWNSections(parliamentId: WAParliamentId, date: string): Pro
   const html = await res.text();
 
   const lower = html.toLowerCase();
-  const idx = lower.indexOf("questions without notice");
-  if (idx === -1) return [];
-  const block = html.slice(idx, idx + 8000);
-
+  const marker = "questions without notice";
   const sectionRe = /\/hansard\/daily\/(?:lh|uh)\/[\d-]+\/(\d+)/g;
   const sections: number[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = sectionRe.exec(block)) !== null) {
-    const n = parseInt(m[1], 10);
-    if (!sections.includes(n)) sections.push(n);
+
+  // The TOC can contain several "Questions without notice" items: the real
+  // QWN proceedings, but also "Questions without Notice—Answers" (tabled
+  // answers to earlier questions). Scan every occurrence, skip the Answers
+  // variants, and collect sections from each real block — non-question
+  // sections parse to zero questions downstream, so over-collecting is safe.
+  let searchFrom = 0;
+  while (true) {
+    const idx = lower.indexOf(marker, searchFrom);
+    if (idx === -1) break;
+    searchFrom = idx + marker.length;
+    const tail = lower.slice(idx + marker.length, idx + marker.length + 16);
+    if (tail.startsWith("—answers") || tail.startsWith("&#x2014;answers") || tail.startsWith("&mdash;answers")) continue;
+    // The block runs until the next proceeding's TOC button — QWN lists can
+    // be long, so a fixed window truncates later questions.
+    const blockEnd = lower.indexOf("btn-toc-procexpander", idx + marker.length);
+    const block = html.slice(idx, blockEnd === -1 ? idx + 60000 : blockEnd);
+    let m: RegExpExecArray | null;
+    while ((m = sectionRe.exec(block)) !== null) {
+      const n = parseInt(m[1], 10);
+      if (!sections.includes(n)) sections.push(n);
+    }
+    sectionRe.lastIndex = 0;
   }
   return sections;
 }
@@ -72,8 +90,16 @@ function stripTags(s: string): string {
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
-    .replace(/\s+/g, " ");
+    // Hansard tab-delimits numbered sub-questions: "(1)\tWhat was…".
+    // Break each onto its own line so transcripts render as a list.
+    .replace(/(\(\d+\)(?:\s*[–—-]\s*\(\d+\))?)\t/g, "\n$1 ")
+    .replace(/\t/g, " ")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ ?\n ?/g, "\n");
 }
 
 function parseQuestionsXML(xml: string): WAQuestion[] {
@@ -82,7 +108,7 @@ function parseQuestionsXML(xml: string): WAQuestion[] {
   const subject = subjectMatch ? stripTags(subjectMatch[1]).trim() : "";
 
   const talkerRe = /<talker[^>]*>([\s\S]*?)<\/talker>/g;
-  const talkers: { kind: string; name: string; qonNum: number | null; text: string }[] = [];
+  const talkers: { kind: string; name: string; qonNum: number | null; directedTo: string; text: string }[] = [];
   let m: RegExpExecArray | null;
   while ((m = talkerRe.exec(xml)) !== null) {
     const block = m[1];
@@ -93,12 +119,18 @@ function parseQuestionsXML(xml: string): WAQuestion[] {
     const textRe = /<text[^>]*>([\s\S]*?)<\/text>/g;
     let tm: RegExpExecArray | null;
     while ((tm = textRe.exec(block)) !== null) allTexts.push(tm[1]);
+    // The header line ("453. Hon Nick Goiran to the parliamentary secretary
+    // representing the Attorney General:") names who the question is directed
+    // to; it's excluded from the transcript text below.
+    const headerLine = allTexts.map((t) => stripTags(t).trim()).find((t) => /^\d+\./.test(t));
+    const dirMatch = headerLine?.match(/\bto the\s+(.+?)\s*:?\s*$/i);
     const contentTexts = allTexts.filter((t) => !/^\s*\d+\./.test(stripTags(t)));
-    const text = contentTexts.map((t) => stripTags(t).trim()).filter(Boolean).join(" ");
+    const text = contentTexts.map((t) => stripTags(t).trim()).filter(Boolean).join("\n");
     talkers.push({
       kind: kindMatch?.[1] ?? "",
       name: nameMatch ? stripTags(nameMatch[1]).trim() : "",
       qonNum: qonMatch ? parseInt(qonMatch[1], 10) : null,
+      directedTo: dirMatch ? `the ${dirMatch[1]}` : "",
       text,
     });
   }
@@ -112,7 +144,8 @@ function parseQuestionsXML(xml: string): WAQuestion[] {
       number: t.qonNum,
       subject,
       asker: toMatch ? toMatch[1] : t.name,
-      minister: toMatch ? toMatch[2] : "",
+      minister: t.directedTo || (toMatch ? `the ${toMatch[2]}` : ""),
+      answerer: answer?.name ?? "",
       questionText: t.text,
       answerText: answer?.text ?? "",
     });
@@ -124,15 +157,18 @@ function parseQuestionsXML(xml: string): WAQuestion[] {
 // Member ID resolution
 // ---------------------------------------------------------------------------
 
-async function resolveMemberId(lastName: string, parliamentId: WAParliamentId): Promise<string | null> {
+async function resolveMember(
+  lastName: string,
+  parliamentId: WAParliamentId
+): Promise<{ id: string; party_id: string | null } | null> {
   const { data } = await db
     .from("members")
-    .select("id")
+    .select("id, party_id")
     .eq("parliament_id", parliamentId)
     .ilike("name_last", lastName.trim())
     .limit(1)
     .maybeSingle();
-  return data?.id ?? null;
+  return (data as { id: string; party_id: string | null } | null) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -245,30 +281,69 @@ async function main() {
   }
   console.log(`  Found ${allQuestions.length} questions`);
 
-  // 5. Resolve member IDs and upsert questions
+  // 5. Resolve member IDs, classify Dorothy Dixers, and upsert questions
   console.log("\nStep 5: Storing questions...");
+  let dixerCount = 0;
   for (const q of allQuestions) {
     const askerLastName = q.asker.split(/\s+/).pop() ?? q.asker;
-    const askerId = await resolveMemberId(askerLastName, parliamentId);
+    const asker = await resolveMember(askerLastName, parliamentId);
+    const answererLastName = q.answerer ? q.answerer.split(/\s+/).pop() : null;
+    const ministerMember = answererLastName ? await resolveMember(answererLastName, parliamentId) : null;
+
+    // QWN answers always come from government ministers, so a government-party
+    // asker means a staged question. AI fallback when the asker is unknown.
+    let isDixer: boolean;
+    if (asker?.party_id) {
+      isDixer = WA_GOVERNMENT_PARTIES.includes(asker.party_id);
+    } else {
+      isDixer = await detectWADorothyDixer({
+        askerName: q.asker,
+        ministerName: q.minister,
+        questionText: q.questionText,
+      }).catch((err) => {
+        console.warn(`  Q${q.number}: dixer detection failed (non-fatal):`, err);
+        return false;
+      });
+    }
+    if (isDixer) dixerCount++;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: qErr } = await (db as any).from("questions").upsert({
       sitting_day_id: sittingDayId,
       question_number: q.number,
-      asker_id: askerId,
+      asker_id: asker?.id ?? null,
       subject: q.subject,
       question_text: q.questionText,
       answer_text: q.answerText,
       minister_name: q.minister || null,
+      minister_id: ministerMember?.id ?? null,
+      is_dorothy_dixer: isDixer,
     }, { onConflict: "sitting_day_id,question_number" });
     if (qErr) throw new Error(`Question upsert failed (Q${q.number}): ${qErr.message}`);
   }
-  console.log(`  Stored ${allQuestions.length} questions`);
+  console.log(`  Stored ${allQuestions.length} questions (${allQuestions.length - dixerCount} real, ${dixerCount} Dorothy Dixers)`);
 
   // 5b. AI summaries
   console.log("\nStep 5b: Generating AI summaries...");
+  // Questions summarised on a previous run keep their summary — re-runs
+  // (e.g. --force after a parser fix) only spend AI on new questions.
+  const { data: existingSummaries } = await db
+    .from("questions")
+    .select("question_number, ai_summary")
+    .eq("sitting_day_id", sittingDayId)
+    .not("ai_summary", "is", null);
+  const summarised = new Map(
+    ((existingSummaries ?? []) as { question_number: number; ai_summary: string }[])
+      .map((r) => [r.question_number, r.ai_summary])
+  );
   const enrichedQuestions: Array<{ asker: string; minister: string; subject: string | null; summary: string | null }> = [];
   for (const q of allQuestions) {
     if (!q.questionText && !q.answerText) continue;
+    const existing = summarised.get(q.number);
+    if (existing) {
+      enrichedQuestions.push({ asker: q.asker, minister: q.minister, subject: q.subject || null, summary: existing });
+      continue;
+    }
     try {
       const summary = await summariseWAQuestion({
         askerName: q.asker,
@@ -290,7 +365,14 @@ async function main() {
 
   // 5c. Daily digest
   console.log("\nStep 5c: Generating daily digest...");
-  try {
+  const { data: existingDigest } = await db
+    .from("daily_digests")
+    .select("id")
+    .eq("sitting_day_id", sittingDayId)
+    .maybeSingle();
+  if (existingDigest) {
+    console.log("  Daily digest already exists — skipping");
+  } else try {
     const digest = await summariseWADay({
       date,
       chamber: WA_PARLIAMENTS[parliamentId].name,

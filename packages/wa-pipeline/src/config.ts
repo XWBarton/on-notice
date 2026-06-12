@@ -5,6 +5,9 @@ export const WA_PARLIAMENTS = {
 
 export type WAParliamentId = keyof typeof WA_PARLIAMENTS;
 
+/** Parties currently in government in WA (party ids) */
+export const WA_GOVERNMENT_PARTIES = ["wa_alp"];
+
 /** WA party definitions — keyed by the code used on parliament.wa.gov.au */
 export const WA_PARTIES: Record<string, {
   id: string;

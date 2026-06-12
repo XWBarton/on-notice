@@ -68,6 +68,7 @@ export default async function WADatePage({ params, searchParams }: PageProps) {
     ai_summary: string | null;
     minister_name: string | null;
     members: { name_display: string; party_id: string | null; parties: { short_name: string; colour_hex: string } | null } | null;
+    minister: { name_display: string; parties: { short_name: string; colour_hex: string } | null } | null;
   };
 
   const [{ data: questionsRaw }, { data: digestRaw }] = await Promise.all([
@@ -80,7 +81,8 @@ export default async function WADatePage({ params, searchParams }: PageProps) {
         answer_text,
         ai_summary,
         minister_name,
-        members!questions_asker_id_fkey(name_display, party_id, parties(short_name, colour_hex))
+        members!questions_asker_id_fkey(name_display, party_id, parties(short_name, colour_hex)),
+        minister:members!questions_minister_id_fkey(name_display, parties(short_name, colour_hex))
       `)
       .eq("sitting_day_id", sittingDay.id)
       .order("question_number", { ascending: true }),
@@ -137,6 +139,7 @@ export default async function WADatePage({ params, searchParams }: PageProps) {
                   ai_summary: q.ai_summary,
                   minister_name: q.minister_name,
                   asker: q.members,
+                  minister: q.minister,
                 }}
               />
             ))}
