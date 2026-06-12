@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase";
 
-export const revalidate = 3600;
+// Render fresh from the DB on each request; the CDN caches via Cache-Control.
+// (A static ISR prerender served a stale empty feed even after episodes landed.)
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const supabase = createClient();
@@ -72,7 +74,7 @@ export async function GET() {
   return new Response(xml, {
     headers: {
       "Content-Type": "application/rss+xml; charset=utf-8",
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": "public, max-age=900",
     },
   });
 }
