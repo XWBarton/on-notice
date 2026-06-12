@@ -13,8 +13,8 @@ export interface WAVideoMeta {
  * Fetch a WA Parliament video page and extract the HLS m3u8 stream URL
  * from the embedded broadcasting.Player() initialisation script.
  */
-export async function fetchVideoMeta(uuid: string): Promise<WAVideoMeta> {
-  const url = `${BASE_URL}/watch/video/${uuid}`;
+export async function fetchVideoMeta(uuid: string, chapter?: number | null): Promise<WAVideoMeta> {
+  const url = `${BASE_URL}/watch/video/${uuid}${chapter ? `?chapter=${chapter}` : ""}`;
   console.log(`  Fetching video page: ${url}`);
 
   const res = await fetch(url);

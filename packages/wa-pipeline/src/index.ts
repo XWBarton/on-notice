@@ -401,15 +401,11 @@ async function main() {
     console.log("\nStep 6: Audio pipeline...");
     const chamberKey = parliamentId === "wa_la" ? "assembly" : "council";
     const listings = await fetchQuestionsWithoutNotice(chamberKey);
-    const match = listings.find((l) =>
-      // Gallery items don't have dates in titles so we take the first (newest) one
-      // TODO: match by date once we understand the gallery date format
-      true
-    );
+    const match = listings.find((l) => l.date === date);
     if (!match) {
-      console.warn("  No video found in gallery — skipping audio");
+      console.warn(`  No gallery video dated ${date} — skipping audio (gallery covers ${listings.at(-1)?.date} to ${listings[0]?.date})`);
     } else {
-      const meta = await fetchVideoMeta(match.uuid);
+      const meta = await fetchVideoMeta(match.uuid, match.chapter);
       const outputDir = path.join(os.tmpdir(), `on-notice-wa-${date}-${parliamentId}`);
       const audioPath = await downloadHlsAudio(meta.audioUrl, outputDir, "qwn.mp3");
       console.log(`  Audio downloaded: ${audioPath}`);
