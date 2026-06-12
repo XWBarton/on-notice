@@ -19,6 +19,14 @@ const CHAMBER_URLS = {
   wa_lc: `${BASE}/parliament/memblist.nsf/WebCurrentMembLC`,
 } as const;
 
+/** "D'ANNA" → "D'Anna", "McGOWAN" → "McGowan", "SMITH-JONES" → "Smith-Jones" */
+function titleCaseSurname(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/(^|[\s\-'])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase())
+    .replace(/\bMc(\p{L})/gu, (_, ch) => "Mc" + ch.toUpperCase());
+}
+
 /**
  * Scrape all current members from both WA chambers.
  */
@@ -58,13 +66,16 @@ function parseMemberList(html: string, parliamentId: "wa_la" | "wa_lc"): WAMembe
     const link = nameCell.find("a").first();
     if (!link.length) return;
 
-    // Last name is in <b>, first name is the rest
-    const lastName = link.find("b").text().trim();
+    // Last name is in <b>, first name is the rest. The site renders
+    // surnames in all caps — normalise to title case ("D'ANNA" → "D'Anna",
+    // "McGOWAN" → "McGowan", "SMITH-JONES" → "Smith-Jones").
+    const rawLastName = link.find("b").text().trim();
+    const lastName = titleCaseSurname(rawLastName);
     const fullText = link.text().trim();
     // Remove title prefix (Mr/Ms/Mrs/Dr/Hon) and last name to get first name
     const firstName = fullText
       .replace(/^(?:Mr|Ms|Mrs|Dr|Hon\.?)\s+/i, "")
-      .replace(lastName, "")
+      .replace(rawLastName, "")
       .trim();
 
     // Party: "Party: ALP" in the name cell text
