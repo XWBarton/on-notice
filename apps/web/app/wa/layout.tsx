@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   openGraph: {
     siteName: "On Notice WA",
     type: "website",
-    images: [{ url: "/icon.svg" }],
+    images: [{ url: "/icon-wa.svg" }],
   },
 };
 
@@ -19,7 +19,7 @@ export default function WALayout({ children }: { children: React.ReactNode }) {
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto max-w-3xl px-4 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
           <a href="/" className="flex items-center gap-2.5">
-            <Image src="/icon.svg" alt="On Notice WA" width={32} height={32} />
+            <Image src="/icon-wa.svg" alt="On Notice WA" width={32} height={32} />
             <div className="flex items-baseline gap-2">
               <span className="text-xl font-bold tracking-tight">On Notice</span>
               <span className="text-sm font-semibold text-gold px-1.5 py-0.5 rounded bg-[#FFD700]/15 text-[#B8860B]">

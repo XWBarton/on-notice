@@ -57,6 +57,38 @@ SENATE = {
     ],
 }
 
+# State/territory icons: both chambers combined, with a centre accent circle
+# in the jurisdiction's traditional colours (fill, ring) to tell states apart.
+STATE_COLOURS = {
+    'wa':  ('#FFD200', '#000000'),  # black and gold
+    'nsw': ('#9BCBEB', '#00539F'),  # sky blue
+    'vic': ('#C0C0C0', '#003C71'),  # navy and silver
+    'qld': ('#73182C', '#FFFFFF'),  # maroon
+    'sa':  ('#D50032', '#FFD100'),  # red and gold
+    'tas': ('#006A4D', '#A6192E'),  # bottle green
+    'nt':  ('#C25E03', '#000000'),  # ochre and black
+    'act': ('#FFC72C', '#0072CE'),  # blue and gold
+}
+
+# WA: 59 Legislative Assembly + 37 Legislative Council (2025 parliament).
+# Colours match WA_PARTIES in packages/wa-pipeline/src/config.ts.
+WA = {
+    'expected': 96,
+    'output': 'parliament_icon_wa.svg',
+    'accent': STATE_COLOURS['wa'],
+    'radii': [48, 62, 76],
+    'parties': [
+        ('#43A047', 4,  'Greens'),
+        ('#4CAF50', 1,  'Animal Justice Party'),
+        ('#E53935', 62, 'Labor'),
+        ('#FF6F00', 1,  'WA Party'),
+        ('#F4A300', 2,  'One Nation'),
+        ('#7B1FA2', 1,  'Australian Christians'),
+        ('#2E7D32', 8,  'Nationals'),
+        ('#1565C0', 17, 'Liberal'),
+    ],
+}
+
 # ── END OF EDITABLE SECTION ────────────────────────────────────────────────────
 
 
@@ -77,8 +109,9 @@ def generate(chamber: dict):
 
     CX, CY = 100, 100
 
-    # 3 rings for Senate (76 seats), 4 rings for House (150 seats)
-    radii = [40, 56, 72] if total <= 80 else [43, 56, 69, 82]
+    # 3 rings for Senate (76 seats), 4 rings for House (150 seats).
+    # Configs with a centre accent circle push the rings outward to make room.
+    radii = chamber.get('radii') or ([40, 56, 72] if total <= 80 else [43, 56, 69, 82])
 
     total_r = sum(radii)
     counts = [round(r / total_r * total) for r in radii]
@@ -113,6 +146,10 @@ def generate(chamber: dict):
         print("  All party counts correct")
 
     lines = ['<svg viewBox="0 0 200 200" width="200" height="200" xmlns="http://www.w3.org/2000/svg">']
+    accent = chamber.get('accent')
+    if accent:
+        fill, ring = accent
+        lines.append(f'<circle cx="{CX}" cy="{CY}" r="29" fill="{fill}" stroke="{ring}" stroke-width="7"/>')
     for k, (r, n) in enumerate(zip(radii, counts)):
         for j in range(n):
             frac = j / n
@@ -136,11 +173,14 @@ if __name__ == '__main__':
     elif arg == 'house':
         print("House of Representatives ───────")
         generate(HOUSE)
+    elif arg == 'wa':
+        print("WA Parliament ──────────────────")
+        generate(WA)
     elif arg == 'both':
         print("House of Representatives ───────")
         generate(HOUSE)
         print("Senate ─────────────────────────")
         generate(SENATE)
     else:
-        print(f"Unknown argument '{arg}'. Use: house, senate, or both")
+        print(f"Unknown argument '{arg}'. Use: house, senate, wa, or both")
         sys.exit(1)
