@@ -89,6 +89,37 @@ WA = {
     ],
 }
 
+# Per-chamber WA icons, accented with the chamber's seat-leather colour:
+# unusually for a Westminster parliament the Assembly is blue, the Council red.
+WA_LA = {
+    'expected': 59,
+    'output': 'parliament_icon_wa_la.svg',
+    'accent': ('#2D5D8E', '#000000'),
+    'radii': [48, 62],
+    'parties': [
+        ('#E53935', 46, 'Labor'),
+        ('#2E7D32', 6,  'Nationals'),
+        ('#1565C0', 7,  'Liberal'),
+    ],
+}
+
+WA_LC = {
+    'expected': 37,
+    'output': 'parliament_icon_wa_lc.svg',
+    'accent': ('#9D2235', '#000000'),
+    'radii': [60],
+    'parties': [
+        ('#43A047', 4,  'Greens'),
+        ('#4CAF50', 1,  'Animal Justice Party'),
+        ('#E53935', 16, 'Labor'),
+        ('#FF6F00', 1,  'WA Party'),
+        ('#F4A300', 2,  'One Nation'),
+        ('#7B1FA2', 1,  'Australian Christians'),
+        ('#2E7D32', 2,  'Nationals'),
+        ('#1565C0', 10, 'Liberal'),
+    ],
+}
+
 # ── END OF EDITABLE SECTION ────────────────────────────────────────────────────
 
 
@@ -176,6 +207,10 @@ if __name__ == '__main__':
     elif arg == 'wa':
         print("WA Parliament ──────────────────")
         generate(WA)
+        print("WA Legislative Assembly ────────")
+        generate(WA_LA)
+        print("WA Legislative Council ─────────")
+        generate(WA_LC)
     elif arg == 'both':
         print("House of Representatives ───────")
         generate(HOUSE)

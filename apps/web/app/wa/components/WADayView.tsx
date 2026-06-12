@@ -1,0 +1,148 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { WAQuestionCard } from "./WAQuestionCard";
+import { SessionPlayer } from "./SessionPlayer";
+import { WADigestCard } from "./WADigestCard";
+
+type Chamber = "wa_la" | "wa_lc";
+
+export interface ChamberData {
+  sittingDay: {
+    id: string;
+    audio_url: string | null;
+    audio_duration_sec: number | null;
+  } | null;
+  questions: Array<{
+    question_number: number;
+    subject: string | null;
+    question_text: string | null;
+    answer_text: string | null;
+    ai_summary: string | null;
+    minister_name: string | null;
+    asker: { name_display: string; party_id: string | null; parties: { short_name: string; colour_hex: string } | null } | null;
+    minister: { name_display: string; parties: { short_name: string; colour_hex: string } | null } | null;
+  }>;
+  digest: { lede: string | null; ai_summary: string | null } | null;
+}
+
+interface WADayViewProps {
+  date: string;
+  dateLabel: string;
+  initialChamber: Chamber;
+  chambers: Record<Chamber, ChamberData>;
+  availableDates: string[];
+}
+
+// Seat leather colours of the WA Parliament chambers — unusually for a
+// Westminster parliament, the Assembly is blue (not green); the Council is red.
+const CHAMBERS: { id: Chamber; label: string; colour: string; icon: string }[] = [
+  { id: "wa_la", label: "Legislative Assembly", colour: "#2D5D8E", icon: "/wa/icon-la.svg" },
+  { id: "wa_lc", label: "Legislative Council", colour: "#9D2235", icon: "/wa/icon-lc.svg" },
+];
+
+export function WADayView({ date, dateLabel, initialChamber, chambers, availableDates }: WADayViewProps) {
+  const router = useRouter();
+  const [chamber, setChamber] = useState<Chamber>(initialChamber);
+  const chamberQuery = chamber === "wa_lc" ? "?chamber=lc" : "";
+  const chamberLabel = CHAMBERS.find((c) => c.id === chamber)!.label;
+  const data = chambers[chamber];
+
+  const switchChamber = (next: Chamber) => {
+    setChamber(next);
+    window.history.replaceState(null, "", `/${date}${next === "wa_lc" ? "?chamber=lc" : ""}`);
+  };
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between mb-6">
+        {/* Chamber toggle — both chambers are pre-loaded so switching is instant */}
+        <div className="flex gap-2">
+          {CHAMBERS.map((c) => {
+            const isActive = chamber === c.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => switchChamber(c.id)}
+                style={
+                  isActive
+                    ? { backgroundColor: c.colour, borderColor: c.colour, color: "#fff" }
+                    : { borderColor: `${c.colour}66`, color: c.colour }
+                }
+                className="flex items-center gap-1.5 text-sm font-medium pl-2 pr-3 py-1.5 rounded-full border transition-colors cursor-pointer hover:opacity-85"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={c.icon}
+                  alt=""
+                  width={20}
+                  height={20}
+                  className={isActive ? "rounded-full bg-white/90" : ""}
+                />
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Date picker */}
+        {availableDates.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-500">Date:</label>
+            <select
+              value={date}
+              onChange={(e) => router.push(`/${e.target.value}${chamberQuery}`)}
+              className="text-sm border border-gray-200 rounded-md px-2 py-1.5 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-300"
+            >
+              {availableDates.map((d) => (
+                <option key={d} value={d}>
+                  {new Date(d + "T00:00:00").toLocaleDateString("en-AU", {
+                    weekday: "short",
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-6">
+        <div>
+          <p className="text-sm text-gray-400 mb-1">{dateLabel}</p>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">
+            Questions Without Notice
+          </h1>
+          <p className="text-sm text-gray-500 mt-1 mb-3">
+            {chamberLabel} · {data.questions.length} questions
+          </p>
+          {data.sittingDay?.audio_url && (
+            <SessionPlayer
+              key={chamber}
+              url={data.sittingDay.audio_url}
+              durationSec={data.sittingDay.audio_duration_sec}
+            />
+          )}
+        </div>
+
+        {data.digest && <WADigestCard digest={data.digest} />}
+
+        {data.questions.length > 0 ? (
+          <div className="space-y-3">
+            {data.questions.map((q) => (
+              <WAQuestionCard key={`${chamber}-${q.question_number}`} question={q} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">
+            No Questions Without Notice found for the {chamberLabel} on this sitting day. It may
+            still be processing.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}

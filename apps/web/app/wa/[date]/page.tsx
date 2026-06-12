@@ -1,10 +1,7 @@
 import { createClient } from "@/lib/supabase";
 import { format, parseISO, differenceInDays } from "date-fns";
 import { notFound, redirect } from "next/navigation";
-import { WAQuestionCard } from "../components/WAQuestionCard";
-import { SessionPlayer } from "../components/SessionPlayer";
-import { WAFeedNav } from "../components/WAFeedNav";
-import { WADigestCard } from "../components/WADigestCard";
+import { WADayView, type ChamberData } from "../components/WADayView";
 
 export const revalidate = 1800;
 
@@ -18,49 +15,52 @@ interface PageProps {
 export default async function WADatePage({ params, searchParams }: PageProps) {
   const { date } = await params;
   const { chamber: chamberParam } = await searchParams;
-  const chamber: Chamber = chamberParam === "lc" ? "wa_lc" : "wa_la";
-  const chamberLabel = chamber === "wa_la" ? "Legislative Assembly" : "Legislative Council";
-  const chamberQuery = chamber === "wa_lc" ? "?chamber=lc" : "";
+  const initialChamber: Chamber = chamberParam === "lc" ? "wa_lc" : "wa_la";
+  const chamberQuery = chamberParam === "lc" ? "?chamber=lc" : "";
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) notFound();
 
   const supabase = createClient();
 
-  const [{ data: sittingDayRaw }, { data: allDates }] = await Promise.all([
+  // Both chambers load together so the toggle switches instantly client-side.
+  const [{ data: daysRaw }, { data: allDatesRaw }] = await Promise.all([
     supabase
       .from("sitting_days")
-      .select("id, sitting_date, audio_url, audio_duration_sec, hansard_url")
-      .eq("parliament_id", chamber)
+      .select("id, sitting_date, parliament_id, audio_url, audio_duration_sec, hansard_url")
+      .in("parliament_id", ["wa_la", "wa_lc"])
       .eq("sitting_date", date)
-      .eq("pipeline_status", "complete")
-      .maybeSingle(),
+      .eq("pipeline_status", "complete"),
     supabase
       .from("sitting_days")
       .select("sitting_date")
-      .eq("parliament_id", chamber)
+      .in("parliament_id", ["wa_la", "wa_lc"])
       .eq("pipeline_status", "complete")
       .order("sitting_date", { ascending: false })
-      .limit(60),
+      .limit(120),
   ]);
 
-  const sittingDay = sittingDayRaw as {
+  type SittingDay = {
     id: string;
     sitting_date: string;
+    parliament_id: Chamber;
     audio_url: string | null;
     audio_duration_sec: number | null;
     hansard_url: string | null;
-  } | null;
+  };
+  const days = (daysRaw ?? []) as SittingDay[];
 
-  // No data for this exact date — redirect to the most recent sitting day, or 404.
-  if (!sittingDay) {
-    const latestDate = allDates?.[0]?.sitting_date as string | undefined;
+  // No data for this exact date in either chamber — redirect to the most
+  // recent sitting day, or 404.
+  if (days.length === 0) {
+    const latestDate = allDatesRaw?.[0]?.sitting_date as string | undefined;
     if (latestDate && latestDate !== date) {
       redirect(`/${latestDate}${chamberQuery}`);
     }
     notFound();
   }
 
-  type WAQuestion = {
+  type WAQuestionRow = {
+    sitting_day_id: string;
     question_number: number;
     subject: string | null;
     question_text: string | null;
@@ -71,10 +71,12 @@ export default async function WADatePage({ params, searchParams }: PageProps) {
     minister: { name_display: string; parties: { short_name: string; colour_hex: string } | null } | null;
   };
 
-  const [{ data: questionsRaw }, { data: digestRaw }] = await Promise.all([
+  const dayIds = days.map((d) => d.id);
+  const [{ data: questionsRaw }, { data: digestsRaw }] = await Promise.all([
     supabase
       .from("questions")
       .select(`
+        sitting_day_id,
         question_number,
         subject,
         question_text,
@@ -84,20 +86,41 @@ export default async function WADatePage({ params, searchParams }: PageProps) {
         members!questions_asker_id_fkey(name_display, party_id, parties(short_name, colour_hex)),
         minister:members!questions_minister_id_fkey(name_display, parties(short_name, colour_hex))
       `)
-      .eq("sitting_day_id", sittingDay.id)
+      .in("sitting_day_id", dayIds)
       .order("question_number", { ascending: true }),
     supabase
       .from("daily_digests")
-      .select("lede, ai_summary")
-      .eq("sitting_day_id", sittingDay.id)
-      .maybeSingle(),
+      .select("sitting_day_id, lede, ai_summary")
+      .in("sitting_day_id", dayIds),
   ]);
 
-  const questions = questionsRaw as WAQuestion[] | null;
-  const digest = digestRaw as { lede: string | null; ai_summary: string | null } | null;
+  const questions = (questionsRaw ?? []) as WAQuestionRow[];
+  const digests = (digestsRaw ?? []) as { sitting_day_id: string; lede: string | null; ai_summary: string | null }[];
 
-  const availableDates = (allDates ?? []).map((d) => d.sitting_date as string);
-  const dateLabel = format(parseISO(sittingDay.sitting_date), "EEEE d MMMM yyyy");
+  const chamberData = (chamber: Chamber): ChamberData => {
+    const day = days.find((d) => d.parliament_id === chamber) ?? null;
+    return {
+      sittingDay: day
+        ? { id: day.id, audio_url: day.audio_url, audio_duration_sec: day.audio_duration_sec }
+        : null,
+      questions: questions
+        .filter((q) => q.sitting_day_id === day?.id)
+        .map((q) => ({
+          question_number: q.question_number,
+          subject: q.subject,
+          question_text: q.question_text,
+          answer_text: q.answer_text,
+          ai_summary: q.ai_summary,
+          minister_name: q.minister_name,
+          asker: q.members,
+          minister: q.minister,
+        })),
+      digest: digests.find((dg) => dg.sitting_day_id === day?.id) ?? null,
+    };
+  };
+
+  const availableDates = [...new Set((allDatesRaw ?? []).map((d) => d.sitting_date as string))];
+  const dateLabel = format(parseISO(date), "EEEE d MMMM yyyy");
   const inRecess = differenceInDays(new Date(), parseISO(date)) > 1;
 
   return (
@@ -108,48 +131,13 @@ export default async function WADatePage({ params, searchParams }: PageProps) {
         </div>
       )}
 
-      <WAFeedNav currentDate={date} currentChamber={chamber} availableDates={availableDates} />
-
-      <div className="space-y-6">
-        <div>
-          <p className="text-sm text-gray-400 mb-1">{dateLabel}</p>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-            Questions Without Notice
-          </h1>
-          <p className="text-sm text-gray-500 mt-1 mb-3">
-            {chamberLabel} · {questions?.length ?? 0} questions
-          </p>
-          {sittingDay.audio_url && (
-            <SessionPlayer url={sittingDay.audio_url} durationSec={sittingDay.audio_duration_sec} />
-          )}
-        </div>
-
-        {digest && <WADigestCard digest={digest} />}
-
-        {questions && questions.length > 0 ? (
-          <div className="space-y-3">
-            {questions.map((q) => (
-              <WAQuestionCard
-                key={q.question_number}
-                question={{
-                  question_number: q.question_number,
-                  subject: q.subject,
-                  question_text: q.question_text,
-                  answer_text: q.answer_text,
-                  ai_summary: q.ai_summary,
-                  minister_name: q.minister_name,
-                  asker: q.members,
-                  minister: q.minister,
-                }}
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-400">
-            No Questions Without Notice found for this sitting day. It may still be processing.
-          </p>
-        )}
-      </div>
+      <WADayView
+        date={date}
+        dateLabel={dateLabel}
+        initialChamber={initialChamber}
+        chambers={{ wa_la: chamberData("wa_la"), wa_lc: chamberData("wa_lc") }}
+        availableDates={availableDates}
+      />
     </div>
   );
 }
