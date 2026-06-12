@@ -1,84 +1,118 @@
 import { createClient } from "@/lib/supabase";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
+import { CopyRssButton } from "../../podcast/CopyRssButton";
 
-export const revalidate = 3600;
+export const revalidate = 60;
 
-const WA_RSS_URL = "https://wa.on-notice.xyz/api/feed.xml";
+const FEEDS = [
+  {
+    id: "wa_la",
+    label: "Legislative Assembly",
+    rssUrl: "https://wa.on-notice.xyz/api/feed.xml?chamber=la",
+  },
+  {
+    id: "wa_lc",
+    label: "Legislative Council",
+    rssUrl: "https://wa.on-notice.xyz/api/feed.xml?chamber=lc",
+  },
+];
 
 export default async function WAPodcastPage() {
   const supabase = createClient();
 
-  const { data: daysRaw } = await supabase
+  const { data: days } = await supabase
     .from("sitting_days")
-    .select("id, sitting_date, parliament_id, audio_url, audio_duration_sec")
+    .select("id, sitting_date, parliament_id, audio_url, audio_duration_sec, daily_digests(lede), questions(is_dorothy_dixer)")
     .not("audio_url", "is", null)
     .in("parliament_id", ["wa_la", "wa_lc"])
     .order("sitting_date", { ascending: false })
-    .limit(40);
+    .limit(60);
 
-  type WADay = {
-    id: string;
-    sitting_date: string;
-    parliament_id: string;
-    audio_url: string | null;
-    audio_duration_sec: number | null;
-  };
-  const days = (daysRaw ?? []) as WADay[];
+  // Group by date then chamber
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const byDate = new Map<string, { wa_la?: any; wa_lc?: any }>();
+  for (const day of days ?? []) {
+    const entry = byDate.get(day.sitting_date) ?? {};
+    entry[day.parliament_id as "wa_la" | "wa_lc"] = day;
+    byDate.set(day.sitting_date, entry);
+  }
+  const sortedDates = [...byDate.keys()].sort((a, b) => b.localeCompare(a));
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold mb-1">Question Time Podcast</h1>
         <p className="text-gray-500 text-sm">
-          Questions Without Notice from the WA Legislative Assembly and Council.
+          Daily Questions Without Notice. Dorothy Dixers removed. Just the real scrutiny.
         </p>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-center justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">RSS Feed</p>
-          <p className="font-medium text-gray-900 text-sm">On Notice WA — Questions Without Notice</p>
-          <p className="text-xs text-gray-400 mt-0.5 font-mono">{WA_RSS_URL}</p>
-        </div>
-        <a
-          href={WA_RSS_URL}
-          className="shrink-0 text-sm font-medium text-blue-600 hover:underline"
-        >
-          Subscribe →
-        </a>
+      {/* Subscribe section */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        {FEEDS.map((feed) => (
+          <div key={feed.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Feed</p>
+              <p className="font-medium text-gray-900">{feed.label}</p>
+            </div>
+            <CopyRssButton url={feed.rssUrl} />
+          </div>
+        ))}
       </div>
 
-      {days.length === 0 && (
+      {/* Episode list */}
+      {!sortedDates.length && (
         <p className="text-gray-400 text-sm">No episodes yet.</p>
       )}
 
       <div className="space-y-3">
-        {days.map((day) => (
-          <a
-            key={day.id}
-            href={day.audio_url!}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-between gap-4 bg-white border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
-          >
-            <div>
-              <p className="font-medium text-gray-900 text-sm">
-                {format(parseISO(day.sitting_date), "EEEE d MMMM yyyy")}
+        {sortedDates.map((date) => {
+          const entry = byDate.get(date)!;
+          return (
+            <div key={date} className="bg-white border border-gray-200 rounded-lg p-4">
+              <p className="font-medium text-gray-900 mb-2">
+                {format(new Date(date), "EEEE d MMMM yyyy")}
               </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {day.parliament_id === "wa_la" ? "Legislative Assembly" : "Legislative Council"}
-              </p>
+              <div className="space-y-2">
+                {(["wa_la", "wa_lc"] as const).map((pid) => {
+                  const day = entry[pid];
+                  if (!day) return null;
+                  const questions = day.questions ?? [];
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const realCount = questions.filter((q: any) => !q.is_dorothy_dixer).length;
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const dixerCount = questions.filter((q: any) => q.is_dorothy_dixer).length;
+                  const digest = Array.isArray(day.daily_digests) ? day.daily_digests[0] : day.daily_digests;
+                  return (
+                    <a
+                      key={pid}
+                      href={`/podcast/${date}${pid === "wa_lc" ? "?chamber=lc" : ""}`}
+                      className="flex justify-between items-center gap-4 rounded-md px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-700">
+                          {pid === "wa_la" ? "Legislative Assembly" : "Legislative Council"}
+                        </p>
+                        {digest?.lede && (
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{digest.lede}</p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {realCount} questions
+                          {dixerCount > 0 ? ` · ${dixerCount} Dorothy Dixers removed` : ""}
+                        </p>
+                      </div>
+                      {day.audio_duration_sec && (
+                        <span className="text-xs text-gray-400 shrink-0">
+                          {formatDuration(day.audio_duration_sec)}
+                        </span>
+                      )}
+                    </a>
+                  );
+                })}
+              </div>
             </div>
-            <div className="flex items-center gap-3 shrink-0">
-              {day.audio_duration_sec && (
-                <span className="text-xs text-gray-400">{formatDuration(day.audio_duration_sec)}</span>
-              )}
-              <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1">
-                ▶ Play
-              </span>
-            </div>
-          </a>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

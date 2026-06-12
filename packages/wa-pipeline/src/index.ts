@@ -10,7 +10,10 @@ import { syncWAMembers } from "./scrapers/wa-members";
 import { fetchQuestionsWithoutNotice } from "./scrapers/wa-gallery";
 import { fetchVideoMeta } from "./scrapers/wa-video";
 import { downloadHlsAudio } from "./audio/downloader";
-import { uploadEpisode } from "./audio/uploader";
+import { uploadEpisode, uploadQuestionClip } from "./audio/uploader";
+import { fetchChapterCaptions, renderTranscript } from "./audio/captions";
+import { buildEpisode, type QuestionSegment } from "./audio/editor";
+import { timestampWAQuestions } from "./ai/timestamp-questions";
 import { getAudioDuration } from "./audio/duration";
 import { summariseWAQuestion } from "./ai/summarise";
 import { summariseWADay } from "./ai/summarise-day";
@@ -284,6 +287,7 @@ async function main() {
   // 5. Resolve member IDs, classify Dorothy Dixers, and upsert questions
   console.log("\nStep 5: Storing questions...");
   let dixerCount = 0;
+  const dixerByNumber = new Map<number, boolean>();
   for (const q of allQuestions) {
     const askerLastName = q.asker.split(/\s+/).pop() ?? q.asker;
     const asker = await resolveMember(askerLastName, parliamentId);
@@ -306,6 +310,7 @@ async function main() {
       });
     }
     if (isDixer) dixerCount++;
+    dixerByNumber.set(q.number, isDixer);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: qErr } = await (db as any).from("questions").upsert({
@@ -410,10 +415,61 @@ async function main() {
       const audioPath = await downloadHlsAudio(meta.audioUrl, outputDir, "qwn.mp3");
       console.log(`  Audio downloaded: ${audioPath}`);
 
-      const audioUrl = await uploadEpisode(audioPath, parliamentId, date);
+      // Edit: timestamp each question from the captions, cut per-question
+      // clips, and stitch the non-dixer questions into the episode. Falls
+      // back to the raw QWN audio if any of it fails.
+      let episodePath = audioPath;
+      try {
+        console.log("  Fetching captions for question timestamping...");
+        const captions = await fetchChapterCaptions(meta.hlsUrl);
+        const transcript = renderTranscript(captions);
+
+        const timestamps = await timestampWAQuestions(
+          transcript,
+          allQuestions.map((q) => ({
+            questionNumber: q.number,
+            askerName: q.asker,
+            ministerName: q.minister,
+            questionText: q.questionText,
+            isDorothyDixer: dixerByNumber.get(q.number) ?? false,
+          }))
+        );
+        console.log(`  Timestamped ${timestamps.length}/${allQuestions.length} questions`);
+        if (timestamps.length === 0) throw new Error("no questions timestamped");
+
+        const segments: QuestionSegment[] = timestamps.map((t) => ({
+          questionNumber: t.questionNumber,
+          startSec: t.startSec,
+          endSec: t.endSec,
+          includeInPodcast: !(dixerByNumber.get(t.questionNumber) ?? false),
+        }));
+        const episode = await buildEpisode(
+          audioPath,
+          segments,
+          path.join(outputDir, "episode.mp3"),
+          outputDir
+        );
+        episodePath = episode.path;
+        const cut = segments.filter((s) => s.includeInPodcast === false).length;
+        console.log(`  Episode built: ${segments.length - cut} questions, ${cut} Dorothy Dixers cut (${Math.round(episode.durationSec / 60)}m)`);
+
+        for (const [num, clipPath] of episode.clipPaths) {
+          const clipUrl = await uploadQuestionClip(clipPath, parliamentId, date, num);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (db as any).from("questions")
+            .update({ audio_clip_url: clipUrl })
+            .eq("sitting_day_id", sittingDayId)
+            .eq("question_number", num);
+        }
+        console.log(`  Uploaded ${episode.clipPaths.size} question clips`);
+      } catch (err) {
+        console.warn("  Audio editing failed (non-fatal) — using raw QWN audio:", err);
+      }
+
+      const audioUrl = await uploadEpisode(episodePath, parliamentId, date);
       console.log(`  Uploaded to R2: ${audioUrl}`);
 
-      const durationSec = await getAudioDuration(audioPath);
+      const durationSec = await getAudioDuration(episodePath);
       if (durationSec) console.log(`  Duration: ${Math.round(durationSec / 60)}m`);
 
       // Update sitting day with audio URL and metadata

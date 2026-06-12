@@ -18,7 +18,19 @@ export async function uploadEpisode(
   parliamentId: string,
   date: string
 ): Promise<string> {
-  const key = `audio/${parliamentId}/${date}/episode.mp3`;
+  return uploadAudioFile(localPath, `audio/${parliamentId}/${date}/episode.mp3`);
+}
+
+export async function uploadQuestionClip(
+  localPath: string,
+  parliamentId: string,
+  date: string,
+  questionNumber: number
+): Promise<string> {
+  return uploadAudioFile(localPath, `audio/${parliamentId}/${date}/q${questionNumber}.mp3`);
+}
+
+async function uploadAudioFile(localPath: string, key: string): Promise<string> {
   const body = fs.readFileSync(localPath);
 
   console.log(`  Uploading ${(body.length / 1024 / 1024).toFixed(1)}MB to R2: ${key}`);

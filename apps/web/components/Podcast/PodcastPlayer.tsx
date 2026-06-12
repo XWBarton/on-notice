@@ -14,10 +14,17 @@ interface PodcastPlayerProps {
   parliamentId?: string;
 }
 
-// House of Representatives: green; Senate: red
+// House of Representatives: green; Senate: red.
+// WA chambers use their seat-leather colours: Assembly blue, Council red.
 function getAccent(parliamentId?: string) {
   if (parliamentId === "fed_sen") {
     return { bg: "#b91c1c", bgHover: "#991b1b", light: "#fef2f2", border: "#fecaca", text: "#b91c1c", active: "#7f1d1d" };
+  }
+  if (parliamentId === "wa_la") {
+    return { bg: "#2D5D8E", bgHover: "#264f79", light: "#eff6ff", border: "#bfdbfe", text: "#2D5D8E", active: "#1e3a5f" };
+  }
+  if (parliamentId === "wa_lc") {
+    return { bg: "#9D2235", bgHover: "#871d2e", light: "#fef2f2", border: "#fecaca", text: "#9D2235", active: "#6b1722" };
   }
   return { bg: "#15803d", bgHover: "#166534", light: "#f0fdf4", border: "#bbf7d0", text: "#15803d", active: "#14532d" };
 }

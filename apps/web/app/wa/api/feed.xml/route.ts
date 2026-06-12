@@ -4,14 +4,19 @@ import { createClient } from "@/lib/supabase";
 // (A static ISR prerender served a stale empty feed even after episodes landed.)
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = createClient();
+
+  // Optional per-chamber feed: ?chamber=la | ?chamber=lc
+  const chamberParam = new URL(request.url).searchParams.get("chamber");
+  const parliaments =
+    chamberParam === "la" ? ["wa_la"] : chamberParam === "lc" ? ["wa_lc"] : ["wa_la", "wa_lc"];
 
   const { data: daysRaw } = await supabase
     .from("sitting_days")
     .select("id, sitting_date, parliament_id, audio_url, audio_duration_sec")
     .not("audio_url", "is", null)
-    .in("parliament_id", ["wa_la", "wa_lc"])
+    .in("parliament_id", parliaments)
     .order("sitting_date", { ascending: false })
     .limit(50);
 
@@ -32,6 +37,7 @@ export async function GET() {
     const title = `${formatDate(day.sitting_date)} — ${chamberLabel} Question Time`;
     const pubDate = new Date(day.sitting_date).toUTCString();
     const guid = `${siteUrl}/?${day.parliament_id === "wa_lc" ? "chamber=lc&" : ""}date=${day.sitting_date}`;
+    const episodeUrl = `${siteUrl}/podcast/${day.sitting_date}${day.parliament_id === "wa_lc" ? "?chamber=lc" : ""}`;
     const durationSec = day.audio_duration_sec ?? 0;
 
     return `
@@ -39,7 +45,7 @@ export async function GET() {
       <title>${escapeXml(title)}</title>
       <pubDate>${pubDate}</pubDate>
       <guid isPermaLink="false">${guid}</guid>
-      <link>${siteUrl}</link>
+      <link>${escapeXml(episodeUrl)}</link>
       <description>${escapeXml(`Questions Without Notice from the WA ${chamberLabel}, ${formatDate(day.sitting_date)}. Visit wa.on-notice.xyz for full transcripts.`)}</description>
       <enclosure url="${day.audio_url}" type="audio/mpeg" length="0" />
       <itunes:duration>${durationSec}</itunes:duration>
@@ -48,12 +54,19 @@ export async function GET() {
     </item>`;
   }).join("\n");
 
+  const feedTitle =
+    chamberParam === "la"
+      ? "On Notice WA — Legislative Assembly Question Time"
+      : chamberParam === "lc"
+        ? "On Notice WA — Legislative Council Question Time"
+        : "On Notice WA — Questions Without Notice";
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
   xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
   xmlns:content="http://purl.org/rss/1.0/modules/content/">
   <channel>
-    <title>On Notice WA — Questions Without Notice</title>
+    <title>${escapeXml(feedTitle)}</title>
     <link>${siteUrl}</link>
     <description>Questions Without Notice from the Western Australian Parliament. Visit wa.on-notice.xyz for full transcripts.</description>
     <language>en-AU</language>
