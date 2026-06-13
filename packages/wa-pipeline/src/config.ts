@@ -19,10 +19,10 @@ export const WA_PARTIES: Record<string, {
   LIB:  { id: "wa_lib",  name: "Liberal Party",               short_name: "Liberal",   colour_hex: "#1565C0" },
   NAT:  { id: "wa_nat",  name: "The Nationals WA",            short_name: "Nationals", colour_hex: "#2E7D32" },
   GWA:  { id: "wa_grn",  name: "Greens Western Australia",    short_name: "Greens",    colour_hex: "#43A047" },
-  ONP:  { id: "wa_onp",  name: "Pauline Hanson's One Nation", short_name: "One Nation",colour_hex: "#F4A300" },
-  AJP:  { id: "wa_ajp",  name: "Animal Justice Party",        short_name: "AJP",       colour_hex: "#4CAF50" },
+  ONP:  { id: "wa_onp",  name: "Pauline Hanson's One Nation", short_name: "One Nation",colour_hex: "#F57C00" },
+  AJP:  { id: "wa_ajp",  name: "Animal Justice Party",        short_name: "AJP",       colour_hex: "#0D9488" },
   AC:   { id: "wa_ac",   name: "Australian Christians",        short_name: "AC",        colour_hex: "#7B1FA2" },
-  LCWA: { id: "wa_lcwa", name: "Western Australia Party",      short_name: "WAP",       colour_hex: "#FF6F00" },
+  LCWA: { id: "wa_lcwa", name: "Western Australia Party",      short_name: "WAP",       colour_hex: "#FDD835" },
   IND:  { id: "wa_ind",  name: "Independent",                  short_name: "Ind",       colour_hex: "#757575" },
 };
 
