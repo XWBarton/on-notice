@@ -289,6 +289,61 @@ function AudioClipPlayer({ url }: { url: string }) {
   );
 }
 
+function CopyLinkButton({
+  anchorId,
+  asker,
+  minister,
+  subject,
+}: {
+  anchorId: string;
+  asker: string | null;
+  minister: string | null;
+  subject: string | null;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    const { origin, pathname, search } = window.location;
+    const url = `${origin}${pathname}${search}#${anchorId}`;
+
+    // Build a readable snippet: "Asker → Minister — Topic", falling back
+    // gracefully when any part is missing.
+    const people = [asker, minister].filter(Boolean).join(" → ");
+    const headline = [people, subject].filter(Boolean).join(people && subject ? " — " : "");
+    const text = headline ? `${headline}\n${url}` : url;
+
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <button
+      onClick={copy}
+      title="Copy a link to this question"
+      className="inline-flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-gray-600 cursor-pointer transition-colors"
+    >
+      {copied ? (
+        <>
+          <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3,8 7,12 13,4" />
+          </svg>
+          Link copied
+        </>
+      ) : (
+        <>
+          <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6.5 9.5a2.5 2.5 0 0 0 3.6.1l2.4-2.4a2.5 2.5 0 0 0-3.5-3.5l-1.4 1.3" />
+            <path d="M9.5 6.5a2.5 2.5 0 0 0-3.6-.1L3.5 8.8a2.5 2.5 0 0 0 3.5 3.5l1.4-1.3" />
+          </svg>
+          Copy link
+        </>
+      )}
+    </button>
+  );
+}
+
 export function QuestionCard({ question, hansardUrl }: QuestionCardProps) {
   const [expanded, setExpanded] = useState(false);
   const { active } = useBrainrot();
@@ -297,7 +352,7 @@ export function QuestionCard({ question, hansardUrl }: QuestionCardProps) {
   const hasTranscript = !!(question.question_text || question.answer_text);
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4">
+    <div id={`q-${question.id}`} className="bg-white border border-gray-200 rounded-lg p-4 scroll-mt-20 target:ring-2 target:ring-blue-400 target:border-blue-400">
       <div className="flex items-center gap-2 flex-wrap text-sm mb-1">
         {(question.asker || question.asker_name) && (
           <>
@@ -378,14 +433,22 @@ export function QuestionCard({ question, hansardUrl }: QuestionCardProps) {
         </p>
       )}
 
-      {hasTranscript && (
-        <button
-          onClick={() => setExpanded((e) => !e)}
-          className="mt-2 text-xs font-medium text-blue-600 hover:underline cursor-pointer"
-        >
-          {expanded ? "Hide transcript" : "Show quoted question & response"}
-        </button>
-      )}
+      <div className="mt-2 flex items-center gap-4">
+        {hasTranscript && (
+          <button
+            onClick={() => setExpanded((e) => !e)}
+            className="text-xs font-medium text-blue-600 hover:underline cursor-pointer"
+          >
+            {expanded ? "Hide transcript" : "Show quoted question & response"}
+          </button>
+        )}
+        <CopyLinkButton
+          anchorId={`q-${question.id}`}
+          asker={question.asker?.name_display ?? question.asker_name ?? null}
+          minister={question.minister?.name_display ?? question.minister_name ?? null}
+          subject={question.subject}
+        />
+      </div>
     </div>
   );
 }

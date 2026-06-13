@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QuestionCard, type TranscriptEntry } from "./QuestionCard";
 
 type Question = {
@@ -35,6 +35,22 @@ export function QuestionSection({ questions, hansardUrl }: { questions: Question
   const realQuestions = questions.filter((q) => !q.is_dorothy_dixer);
   const dixers = questions.filter((q) => q.is_dorothy_dixer);
   const visible = showDixers ? questions : realQuestions;
+
+  // Deep link to a question (#q-N): reveal it if it's a hidden Dorothy Dixer,
+  // then scroll it into view. Client-rendered content means native hash
+  // scrolling can fire before the card exists, so we do it ourselves.
+  useEffect(() => {
+    const match = window.location.hash.match(/^#q-(\d+)$/);
+    if (!match) return;
+    const n = Number(match[1]);
+    if (questions.some((q) => q.id === n && q.is_dorothy_dixer)) setShowDixers(true);
+    const id = requestAnimationFrame(() => {
+      document.getElementById(`q-${n}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(id);
+    // Run once on mount; intentionally not re-running on state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (questions.length === 0) return null;
 
