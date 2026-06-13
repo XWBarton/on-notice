@@ -327,6 +327,25 @@ async function main() {
     }, { onConflict: "sitting_day_id,question_number" });
     if (qErr) throw new Error(`Question upsert failed (Q${q.number}): ${qErr.message}`);
   }
+
+  // Remove stale questions from earlier runs. WA Hansard renumbers qonNums as
+  // the daily record is revised, so a question captured as e.g. Q337 on an
+  // early run can reappear as Q338 later — leaving the upsert-only loop above
+  // with an orphan duplicate. Delete any rows for this day not in the fresh
+  // parse. Guarded on a non-empty parse so a fetch failure never wipes the day.
+  const freshNumbers = allQuestions.map((q) => q.number);
+  if (freshNumbers.length > 0) {
+    const { data: stale } = await db
+      .from("questions")
+      .select("question_number")
+      .eq("sitting_day_id", sittingDayId)
+      .not("question_number", "in", `(${freshNumbers.join(",")})`);
+    const staleNumbers = (stale ?? []).map((s) => (s as { question_number: number }).question_number);
+    if (staleNumbers.length > 0) {
+      await db.from("questions").delete().eq("sitting_day_id", sittingDayId).in("question_number", staleNumbers);
+      console.log(`  Removed ${staleNumbers.length} stale question(s): Q${staleNumbers.join(", Q")}`);
+    }
+  }
   console.log(`  Stored ${allQuestions.length} questions (${allQuestions.length - dixerCount} real, ${dixerCount} Dorothy Dixers)`);
 
   // 5b. AI summaries
