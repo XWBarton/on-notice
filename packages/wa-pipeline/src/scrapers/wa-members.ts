@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { WA_PARTIES, resolvePartyId } from "../config";
 import { db } from "../db/client";
+import { waFetch } from "./http";
 
 const BASE = "https://www.parliament.wa.gov.au";
 
@@ -41,7 +42,7 @@ export async function scrapeWAMembers(): Promise<WAMember[]> {
 
 async function scrapeChamber(parliamentId: "wa_la" | "wa_lc"): Promise<WAMember[]> {
   const url = CHAMBER_URLS[parliamentId];
-  const res = await fetch(url);
+  const res = await waFetch(url);
   if (!res.ok) throw new Error(`Member list fetch failed (${parliamentId}): ${res.status}`);
   const html = await res.text();
   return parseMemberList(html, parliamentId);

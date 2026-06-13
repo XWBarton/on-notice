@@ -1,3 +1,5 @@
+import { waFetch } from "./http";
+
 const BASE_URL = "https://www.parliament.wa.gov.au";
 
 export interface WAVideoMeta {
@@ -17,7 +19,7 @@ export async function fetchVideoMeta(uuid: string, chapter?: number | null): Pro
   const url = `${BASE_URL}/watch/video/${uuid}${chapter ? `?chapter=${chapter}` : ""}`;
   console.log(`  Fetching video page: ${url}`);
 
-  const res = await fetch(url);
+  const res = await waFetch(url);
   if (!res.ok) throw new Error(`Video page fetch failed: ${res.status}`);
 
   const html = await res.text();
