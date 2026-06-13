@@ -137,13 +137,68 @@ function AudioClipPlayer({ url }: { url: string }) {
   );
 }
 
+function CopyLinkButton({
+  anchorId,
+  asker,
+  minister,
+  subject,
+}: {
+  anchorId: string;
+  asker: string | null;
+  minister: string | null;
+  subject: string | null;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    const { origin, pathname, search } = window.location;
+    const url = `${origin}${pathname}${search}#${anchorId}`;
+
+    // Build a readable snippet: "Asker → Minister on Topic", falling back
+    // gracefully when any part is missing.
+    const people = [asker, minister].filter(Boolean).join(" → ");
+    const headline = [people, subject].filter(Boolean).join(people && subject ? " — " : "");
+    const text = headline ? `${headline}\n${url}` : url;
+
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <button
+      onClick={copy}
+      title="Copy a link to this question"
+      className="inline-flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-gray-600 cursor-pointer transition-colors"
+    >
+      {copied ? (
+        <>
+          <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3,8 7,12 13,4" />
+          </svg>
+          Link copied
+        </>
+      ) : (
+        <>
+          <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6.5 9.5a2.5 2.5 0 0 0 3.6.1l2.4-2.4a2.5 2.5 0 0 0-3.5-3.5l-1.4 1.3" />
+            <path d="M9.5 6.5a2.5 2.5 0 0 0-3.6-.1L3.5 8.8a2.5 2.5 0 0 0 3.5 3.5l1.4-1.3" />
+          </svg>
+          Copy link
+        </>
+      )}
+    </button>
+  );
+}
+
 export function WAQuestionCard({ question }: WAQuestionCardProps) {
   const [expanded, setExpanded] = useState(false);
   const party = question.asker?.parties;
   const hasTranscript = !!(question.question_text || question.answer_text);
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4">
+    <div id={`q-${question.question_number}`} className="bg-white border border-gray-200 rounded-lg p-4 scroll-mt-20 target:ring-2 target:ring-[#FFD200] target:border-[#FFD200]">
       <div className="flex items-start justify-between gap-3 mb-1.5">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap text-sm mb-1">
@@ -206,14 +261,22 @@ export function WAQuestionCard({ question }: WAQuestionCardProps) {
         </div>
       )}
 
-      {hasTranscript && (
-        <button
-          onClick={() => setExpanded((e) => !e)}
-          className="mt-2 text-xs font-medium text-blue-600 hover:underline cursor-pointer"
-        >
-          {expanded ? "Hide transcript" : "Show quoted question & response"}
-        </button>
-      )}
+      <div className="mt-2 flex items-center gap-4">
+        {hasTranscript && (
+          <button
+            onClick={() => setExpanded((e) => !e)}
+            className="text-xs font-medium text-blue-600 hover:underline cursor-pointer"
+          >
+            {expanded ? "Hide transcript" : "Show quoted question & response"}
+          </button>
+        )}
+        <CopyLinkButton
+          anchorId={`q-${question.question_number}`}
+          asker={question.asker?.name_display ?? null}
+          minister={question.minister?.name_display ?? question.minister_name}
+          subject={question.subject}
+        />
+      </div>
     </div>
   );
 }

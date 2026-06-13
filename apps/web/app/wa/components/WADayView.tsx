@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { WAQuestionCard } from "./WAQuestionCard";
 import { SessionPlayer } from "./SessionPlayer";
@@ -55,6 +55,25 @@ export function WADayView({ date, dateLabel, initialChamber, chambers, available
   const realQuestions = data.questions.filter((q) => !q.is_dorothy_dixer);
   const dixers = data.questions.filter((q) => q.is_dorothy_dixer);
   const visibleQuestions = showDixers ? data.questions : realQuestions;
+
+  // Deep link to a question (#q-N): reveal it if it's a hidden Dorothy Dixer,
+  // then scroll it into view. Client-rendered content means native hash
+  // scrolling can fire before the card exists, so we do it ourselves.
+  useEffect(() => {
+    const match = window.location.hash.match(/^#q-(\d+)$/);
+    if (!match) return;
+    const n = Number(match[1]);
+    if (data.questions.some((q) => q.question_number === n && q.is_dorothy_dixer)) {
+      setShowDixers(true);
+    }
+    const id = requestAnimationFrame(() => {
+      document.getElementById(`q-${n}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(id);
+    // Keyed to chamber so a link followed after a chamber toggle still lands;
+    // intentionally not re-running on showDixers/other state to avoid re-scrolling.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chamber]);
 
   const switchChamber = (next: Chamber) => {
     setChamber(next);
