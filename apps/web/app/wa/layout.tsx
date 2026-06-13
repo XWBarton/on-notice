@@ -22,7 +22,7 @@ export default function WALayout({ children }: { children: React.ReactNode }) {
             <Image src="/wa/icon.svg" alt="On Notice WA" width={32} height={32} />
             <div className="flex items-baseline gap-2">
               <span className="text-xl font-bold tracking-tight">On Notice</span>
-              <span className="text-sm font-bold px-1.5 py-0.5 rounded bg-black text-[#FFD200]">
+              <span className="text-sm font-bold px-1.5 py-0.5 rounded bg-[#FFD200] text-black">
                 WA
               </span>
             </div>
