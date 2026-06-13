@@ -50,7 +50,7 @@ export async function GET(request: Request) {
       <pubDate>${pubDate}</pubDate>
       <guid isPermaLink="false">${guid}</guid>
       <link>${escapeXml(episodeUrl)}</link>
-      <description>${escapeXml(`Questions Without Notice from the WA ${chamberLabel}, ${formatDate(day.sitting_date)}. Visit wa.on-notice.xyz for full transcripts.`)}</description>
+      <description>${escapeXml(`Question Time from the WA ${chamberLabel}, ${formatDate(day.sitting_date)}. Visit wa.on-notice.xyz for full transcripts.`)}</description>
       <enclosure url="${day.audio_url}" type="audio/mpeg" length="0" />
       <itunes:duration>${durationSec}</itunes:duration>
       <itunes:episodeType>full</itunes:episodeType>
@@ -61,10 +61,10 @@ export async function GET(request: Request) {
 
   const feedTitle =
     chamberParam === "la"
-      ? "On Notice WA — Legislative Assembly Question Time"
+      ? "On Notice - WA — Legislative Assembly"
       : chamberParam === "lc"
-        ? "On Notice WA — Legislative Council Question Time"
-        : "On Notice WA — Questions Without Notice";
+        ? "On Notice - WA — Legislative Council"
+        : "On Notice - WA";
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
@@ -74,7 +74,7 @@ export async function GET(request: Request) {
   <channel>
     <title>${escapeXml(feedTitle)}</title>
     <link>${siteUrl}</link>
-    <description>Questions Without Notice from the Western Australian Parliament. Visit wa.on-notice.xyz for full transcripts.</description>
+    <description>Question Time from the Western Australian Parliament. Visit wa.on-notice.xyz for full transcripts.</description>
     <language>en-AU</language>
     <copyright>Creative Commons CC BY-NC-ND 3.0 AU</copyright>
     <itunes:author>On Notice WA</itunes:author>
