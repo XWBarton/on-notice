@@ -31,8 +31,13 @@ export async function GET(request: Request) {
 
   const siteUrl = "https://wa.on-notice.xyz";
   // Apple Podcasts requires square JPEG/PNG cover art (1400–3000px); an SVG is
-  // rejected. Served from /wa via the subdomain rewrite (see middleware.ts).
-  const artworkUrl = `${siteUrl}/podcast-artwork-wa.png`;
+  // rejected. Assets live under public/wa so they resolve at /wa/* on the
+  // subdomain (root paths get rewritten to /wa/* by middleware and 404).
+  const artworkUrl = `${siteUrl}/wa/podcast-artwork-wa.png`;
+  const chamberArtwork = (parliamentId: string) =>
+    parliamentId === "wa_lc"
+      ? `${siteUrl}/wa/podcast-artwork-wa-lc.png`
+      : `${siteUrl}/wa/podcast-artwork-wa-la.png`;
 
   const items = days.map((day) => {
     const chamberLabel = day.parliament_id === "wa_la" ? "Legislative Assembly" : "Legislative Council";
@@ -53,7 +58,8 @@ export async function GET(request: Request) {
       <guid isPermaLink="false">${escapeXml(guid)}</guid>
       <link>${escapeXml(episodeUrl)}</link>
       <description>${escapeXml(`Question Time from the WA ${chamberLabel}, ${formatDate(day.sitting_date)}. Visit wa.on-notice.xyz for full transcripts.`)}</description>
-      <enclosure url="${day.audio_url}" type="audio/mpeg" length="0" />
+      <itunes:image href="${escapeXml(chamberArtwork(day.parliament_id))}" />
+      <enclosure url="${escapeXml(day.audio_url)}" type="audio/mpeg" length="0" />
       <itunes:duration>${durationSec}</itunes:duration>
       <itunes:episodeType>full</itunes:episodeType>
       <itunes:explicit>false</itunes:explicit>
