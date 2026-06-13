@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   openGraph: {
     siteName: "On Notice WA",
     type: "website",
-    images: [{ url: "/wa/icon.svg" }],
+    images: [{ url: "/wa/podcast-artwork-wa.png" }],
   },
 };
 
