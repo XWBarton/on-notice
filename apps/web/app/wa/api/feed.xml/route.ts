@@ -40,6 +40,10 @@ export async function GET(request: Request) {
     const episodeUrl = `${siteUrl}/podcast/${day.sitting_date}${day.parliament_id === "wa_lc" ? "?chamber=lc" : ""}`;
     const durationSec = day.audio_duration_sec ?? 0;
 
+    // Per-question chapters are served as a Podcast Index JSON file uploaded by
+    // the pipeline alongside the episode (same path, different filename).
+    const chaptersUrl = day.audio_url?.replace("episode.mp3", "chapters.json");
+
     return `
     <item>
       <title>${escapeXml(title)}</title>
@@ -51,6 +55,7 @@ export async function GET(request: Request) {
       <itunes:duration>${durationSec}</itunes:duration>
       <itunes:episodeType>full</itunes:episodeType>
       <itunes:explicit>false</itunes:explicit>
+      ${chaptersUrl ? `<podcast:chapters url="${escapeXml(chaptersUrl)}" type="application/json+chapters" />` : ""}
     </item>`;
   }).join("\n");
 
@@ -64,7 +69,8 @@ export async function GET(request: Request) {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
   xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
-  xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:podcast="https://podcastindex.org/namespace/1.0">
   <channel>
     <title>${escapeXml(feedTitle)}</title>
     <link>${siteUrl}</link>

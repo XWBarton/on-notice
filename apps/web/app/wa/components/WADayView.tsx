@@ -21,6 +21,7 @@ export interface ChamberData {
     answer_text: string | null;
     ai_summary: string | null;
     minister_name: string | null;
+    audio_clip_url: string | null;
     asker: { name_display: string; party_id: string | null; parties: { short_name: string; colour_hex: string } | null } | null;
     minister: { name_display: string; parties: { short_name: string; colour_hex: string } | null } | null;
   }>;

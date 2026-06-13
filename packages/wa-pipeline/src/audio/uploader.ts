@@ -30,6 +30,25 @@ export async function uploadQuestionClip(
   return uploadAudioFile(localPath, `audio/${parliamentId}/${date}/q${questionNumber}.mp3`);
 }
 
+export async function uploadChapters(
+  localPath: string,
+  parliamentId: string,
+  date: string
+): Promise<string> {
+  const key = `audio/${parliamentId}/${date}/chapters.json`;
+  const body = fs.readFileSync(localPath);
+
+  await r2.send(new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    Body: body,
+    ContentType: "application/json+chapters",
+    CacheControl: "public, max-age=86400",
+  }));
+
+  return `${CDN_BASE}/${key}`;
+}
+
 async function uploadAudioFile(localPath: string, key: string): Promise<string> {
   const body = fs.readFileSync(localPath);
 

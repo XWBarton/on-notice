@@ -10,9 +10,9 @@ import { syncWAMembers } from "./scrapers/wa-members";
 import { fetchQuestionsWithoutNotice } from "./scrapers/wa-gallery";
 import { fetchVideoMeta } from "./scrapers/wa-video";
 import { downloadHlsAudio } from "./audio/downloader";
-import { uploadEpisode, uploadQuestionClip } from "./audio/uploader";
+import { uploadEpisode, uploadQuestionClip, uploadChapters } from "./audio/uploader";
 import { fetchChapterCaptions, renderTranscript } from "./audio/captions";
-import { buildEpisode, type QuestionSegment } from "./audio/editor";
+import { buildEpisode, embedChapters, type QuestionSegment } from "./audio/editor";
 import { timestampWAQuestions } from "./ai/timestamp-questions";
 import { getAudioDuration } from "./audio/duration";
 import { summariseWAQuestion } from "./ai/summarise";
@@ -21,6 +21,7 @@ import { WA_PARLIAMENTS, WA_GOVERNMENT_PARTIES, WAParliamentId } from "./config"
 import { detectWADorothyDixer } from "./ai/detect-dixer";
 import * as path from "path";
 import * as os from "os";
+import * as fs from "fs";
 
 // ---------------------------------------------------------------------------
 // Hansard helpers (inline — same logic as apps/web/app/wa/lib/hansard.ts)
@@ -452,6 +453,37 @@ async function main() {
         episodePath = episode.path;
         const cut = segments.filter((s) => s.includeInPodcast === false).length;
         console.log(`  Episode built: ${segments.length - cut} questions, ${cut} Dorothy Dixers cut (${Math.round(episode.durationSec / 60)}m)`);
+
+        // Podcasting 2.0 chapters: one per included question, at its offset in
+        // the edited episode. Embedded as ID3 frames (Apple) + uploaded as
+        // chapters.json referenced by <podcast:chapters> in the RSS feed.
+        const siteUrl = process.env.WA_APP_URL ?? "https://wa.on-notice.xyz";
+        const chamberQuery = parliamentId === "wa_lc" ? "?chamber=lc" : "";
+        const chapters = segments
+          .filter((s) => s.includeInPodcast !== false && episode.chapterStartSecs.has(s.questionNumber))
+          .map((s) => {
+            const q = allQuestions.find((aq) => aq.number === s.questionNumber);
+            const prefix = q?.asker && q?.minister
+              ? `${q.asker} → ${q.minister}: `
+              : q?.asker
+                ? `${q.asker}: `
+                : "";
+            return {
+              startTime: episode.chapterStartSecs.get(s.questionNumber)!,
+              title: q?.subject
+                ? `Q${s.questionNumber}: ${prefix}${q.subject}`
+                : `Question ${s.questionNumber}`,
+              url: `${siteUrl}/${date}${chamberQuery}`,
+            };
+          });
+
+        if (chapters.length > 0) {
+          await embedChapters(episodePath, chapters, episode.durationSec, outputDir);
+          const chaptersFilePath = path.join(outputDir, "chapters.json");
+          fs.writeFileSync(chaptersFilePath, JSON.stringify({ version: "1.2.0", chapters }));
+          await uploadChapters(chaptersFilePath, parliamentId, date);
+          console.log(`  Chapters: ${chapters.length} embedded + uploaded`);
+        }
 
         for (const [num, clipPath] of episode.clipPaths) {
           const clipUrl = await uploadQuestionClip(clipPath, parliamentId, date, num);

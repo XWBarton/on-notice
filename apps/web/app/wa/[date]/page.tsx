@@ -67,6 +67,7 @@ export default async function WADatePage({ params, searchParams }: PageProps) {
     answer_text: string | null;
     ai_summary: string | null;
     minister_name: string | null;
+    audio_clip_url: string | null;
     members: { name_display: string; party_id: string | null; parties: { short_name: string; colour_hex: string } | null } | null;
     minister: { name_display: string; parties: { short_name: string; colour_hex: string } | null } | null;
   };
@@ -83,6 +84,7 @@ export default async function WADatePage({ params, searchParams }: PageProps) {
         answer_text,
         ai_summary,
         minister_name,
+        audio_clip_url,
         members!questions_asker_id_fkey(name_display, party_id, parties(short_name, colour_hex)),
         minister:members!questions_minister_id_fkey(name_display, parties(short_name, colour_hex))
       `)
@@ -112,6 +114,7 @@ export default async function WADatePage({ params, searchParams }: PageProps) {
           answer_text: q.answer_text,
           ai_summary: q.ai_summary,
           minister_name: q.minister_name,
+          audio_clip_url: q.audio_clip_url,
           asker: q.members,
           minister: q.minister,
         })),

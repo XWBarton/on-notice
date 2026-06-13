@@ -4,18 +4,10 @@ import { CopyRssButton } from "../../podcast/CopyRssButton";
 
 export const revalidate = 60;
 
-const FEEDS = [
-  {
-    id: "wa_la",
-    label: "Legislative Assembly",
-    rssUrl: "https://wa.on-notice.xyz/api/feed.xml?chamber=la",
-  },
-  {
-    id: "wa_lc",
-    label: "Legislative Council",
-    rssUrl: "https://wa.on-notice.xyz/api/feed.xml?chamber=lc",
-  },
-];
+const COMBINED_FEED = {
+  label: "WA Parliament — both houses",
+  rssUrl: "https://wa.on-notice.xyz/api/feed.xml",
+};
 
 export default async function WAPodcastPage() {
   const supabase = createClient();
@@ -39,7 +31,8 @@ export default async function WAPodcastPage() {
   const sortedDates = [...byDate.keys()].sort((a, b) => b.localeCompare(a));
 
   return (
-    <div className="space-y-8">
+    <div className="relative left-1/2 right-1/2 -mx-[50vw] -my-8 w-screen bg-white min-h-[calc(100vh-9rem)]">
+      <div className="mx-auto max-w-3xl px-4 py-8 space-y-8">
       <div>
         <h1 className="text-2xl font-bold mb-1">Question Time Podcast</h1>
         <p className="text-gray-500 text-sm">
@@ -48,16 +41,15 @@ export default async function WAPodcastPage() {
       </div>
 
       {/* Subscribe section */}
-      <div className="grid sm:grid-cols-2 gap-4">
-        {FEEDS.map((feed) => (
-          <div key={feed.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-            <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Feed</p>
-              <p className="font-medium text-gray-900">{feed.label}</p>
-            </div>
-            <CopyRssButton url={feed.rssUrl} />
-          </div>
-        ))}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Feed</p>
+          <p className="font-medium text-gray-900">{COMBINED_FEED.label}</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Subscribe once for both the Legislative Assembly and Legislative Council.
+          </p>
+        </div>
+        <CopyRssButton url={COMBINED_FEED.rssUrl} />
       </div>
 
       {/* Episode list */}
@@ -113,6 +105,7 @@ export default async function WAPodcastPage() {
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );
