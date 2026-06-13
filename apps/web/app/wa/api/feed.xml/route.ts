@@ -50,7 +50,7 @@ export async function GET(request: Request) {
     <item>
       <title>${escapeXml(title)}</title>
       <pubDate>${pubDate}</pubDate>
-      <guid isPermaLink="false">${guid}</guid>
+      <guid isPermaLink="false">${escapeXml(guid)}</guid>
       <link>${escapeXml(episodeUrl)}</link>
       <description>${escapeXml(`Question Time from the WA ${chamberLabel}, ${formatDate(day.sitting_date)}. Visit wa.on-notice.xyz for full transcripts.`)}</description>
       <enclosure url="${day.audio_url}" type="audio/mpeg" length="0" />
