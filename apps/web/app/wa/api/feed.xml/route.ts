@@ -30,7 +30,9 @@ export async function GET(request: Request) {
   const days = (daysRaw ?? []) as WADay[];
 
   const siteUrl = "https://wa.on-notice.xyz";
-  const artworkUrl = `${siteUrl}/icon.svg`;
+  // Apple Podcasts requires square JPEG/PNG cover art (1400–3000px); an SVG is
+  // rejected. Served from /wa via the subdomain rewrite (see middleware.ts).
+  const artworkUrl = `${siteUrl}/podcast-artwork-wa.png`;
 
   const items = days.map((day) => {
     const chamberLabel = day.parliament_id === "wa_la" ? "Legislative Assembly" : "Legislative Council";
