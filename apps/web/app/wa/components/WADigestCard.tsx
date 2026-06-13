@@ -16,6 +16,13 @@ function stripMarkdown(text: string): string {
 export function WADigestCard({ digest }: WADigestCardProps) {
   if (!digest.lede && !digest.ai_summary) return null;
 
+  // New digests store key topics as newline-separated bullet points; older ones
+  // are a single prose paragraph. Render bullets as a list, prose as a paragraph.
+  const points = (digest.ai_summary ?? "")
+    .split("\n")
+    .map((p) => stripMarkdown(p.replace(/^[-•]\s*/, "")))
+    .filter(Boolean);
+
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
       <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2">AI Summary</p>
@@ -24,10 +31,16 @@ export function WADigestCard({ digest }: WADigestCardProps) {
           {stripMarkdown(digest.lede)}
         </p>
       )}
-      {digest.ai_summary && (
-        <p className="text-gray-700 text-sm leading-relaxed">
-          {stripMarkdown(digest.ai_summary)}
-        </p>
+      {points.length > 1 ? (
+        <ul className="list-disc pl-4 space-y-1.5 marker:text-amber-400">
+          {points.map((p, i) => (
+            <li key={i} className="text-gray-700 text-sm leading-relaxed">{p}</li>
+          ))}
+        </ul>
+      ) : (
+        points.length === 1 && (
+          <p className="text-gray-700 text-sm leading-relaxed">{points[0]}</p>
+        )
       )}
     </div>
   );

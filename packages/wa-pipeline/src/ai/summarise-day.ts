@@ -39,7 +39,7 @@ export async function summariseWADay(
 Be strictly neutral — report what happened, not whether it was good or bad.
 Do not characterise politicians' motives, do not editorialise, do not use loaded language.
 Stick to what was asked and answered during Questions Without Notice.
-Max 200 words total. No markdown. Always output valid JSON.`,
+No markdown. Always output valid JSON.`,
     messages: [
       {
         role: "user",
@@ -48,11 +48,11 @@ Max 200 words total. No markdown. Always output valid JSON.`,
 Questions Without Notice highlights:
 ${questionsBlock}
 
-Write a daily digest in plain prose:
-1. One-sentence lede stating the most significant topic raised, factually.
-2. A short paragraph covering the main topics raised in Questions Without Notice and how ministers responded.
+Write a scannable daily digest:
+1. "lede": a single sentence naming the most significant topic raised, factually.
+2. "points": an array of 3–5 short bullet points, each one distinct topic. Each ~15–25 words: who raised it and the minister's response, in plain factual language. No leading dashes.
 Do not express opinions on outcomes. Report facts only.
-Output JSON: {"lede": "...", "digest": "..."}`,
+Output JSON: {"lede": "...", "points": ["...", "..."]}`,
       },
     ],
   });
@@ -65,6 +65,11 @@ Output JSON: {"lede": "...", "digest": "..."}`,
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) return { lede: "", digest: "" };
-  const parsed = JSON.parse(jsonMatch[0]) as { lede?: string; digest?: string };
-  return { lede: parsed.lede ?? "", digest: parsed.digest ?? "" };
+  const parsed = JSON.parse(jsonMatch[0]) as { lede?: string; points?: string[]; digest?: string };
+  // Bullet points are stored newline-separated in the digest/ai_summary column;
+  // the day page renders each line as a list item. Fall back to legacy prose.
+  const digest = parsed.points?.length
+    ? parsed.points.map((p) => p.replace(/^[-•]\s*/, "").trim()).filter(Boolean).join("\n")
+    : parsed.digest ?? "";
+  return { lede: parsed.lede ?? "", digest };
 }
