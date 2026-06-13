@@ -22,6 +22,7 @@ export interface ChamberData {
     ai_summary: string | null;
     minister_name: string | null;
     audio_clip_url: string | null;
+    is_dorothy_dixer: boolean;
     asker: { name_display: string; party_id: string | null; parties: { short_name: string; colour_hex: string } | null } | null;
     minister: { name_display: string; parties: { short_name: string; colour_hex: string } | null } | null;
   }>;
@@ -46,9 +47,14 @@ const CHAMBERS: { id: Chamber; label: string; colour: string; icon: string }[] =
 export function WADayView({ date, dateLabel, initialChamber, chambers, availableDates }: WADayViewProps) {
   const router = useRouter();
   const [chamber, setChamber] = useState<Chamber>(initialChamber);
+  const [showDixers, setShowDixers] = useState(false);
   const chamberQuery = chamber === "wa_lc" ? "?chamber=lc" : "";
   const chamberLabel = CHAMBERS.find((c) => c.id === chamber)!.label;
   const data = chambers[chamber];
+
+  const realQuestions = data.questions.filter((q) => !q.is_dorothy_dixer);
+  const dixers = data.questions.filter((q) => q.is_dorothy_dixer);
+  const visibleQuestions = showDixers ? data.questions : realQuestions;
 
   const switchChamber = (next: Chamber) => {
     setChamber(next);
@@ -118,7 +124,8 @@ export function WADayView({ date, dateLabel, initialChamber, chambers, available
             Questions Without Notice
           </h1>
           <p className="text-sm text-gray-500 mt-1 mb-3">
-            {chamberLabel} · {data.questions.length} questions
+            {chamberLabel} · {realQuestions.length} questions
+            {dixers.length > 0 ? ` · ${dixers.length} Dorothy Dixer${dixers.length !== 1 ? "s" : ""} hidden` : ""}
           </p>
           {data.sittingDay?.audio_url && (
             <SessionPlayer
@@ -132,10 +139,29 @@ export function WADayView({ date, dateLabel, initialChamber, chambers, available
         {data.digest && <WADigestCard digest={data.digest} />}
 
         {data.questions.length > 0 ? (
-          <div className="space-y-3">
-            {data.questions.map((q) => (
-              <WAQuestionCard key={`${chamber}-${q.question_number}`} question={q} />
-            ))}
+          <div>
+            {dixers.length > 0 && (
+              <div className="flex justify-end mb-3">
+                <button
+                  onClick={() => setShowDixers((v) => !v)}
+                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                >
+                  {showDixers
+                    ? `Hide ${dixers.length} Dorothy Dixer${dixers.length !== 1 ? "s" : ""}`
+                    : `Show ${dixers.length} Dorothy Dixer${dixers.length !== 1 ? "s" : ""}`}
+                </button>
+              </div>
+            )}
+            <div className="space-y-3">
+              {visibleQuestions.map((q) => (
+                <div key={`${chamber}-${q.question_number}`} className={q.is_dorothy_dixer ? "opacity-60" : ""}>
+                  {q.is_dorothy_dixer && (
+                    <p className="text-xs text-gray-400 mb-1 ml-1">Dorothy Dixer</p>
+                  )}
+                  <WAQuestionCard question={q} />
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <p className="text-sm text-gray-400">
