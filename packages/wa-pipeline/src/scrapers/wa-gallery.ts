@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { waFetch } from "./http";
 
 const BASE_URL = "https://www.parliament.wa.gov.au";
 
@@ -44,7 +45,7 @@ export async function fetchQuestionsWithoutNotice(
   url.searchParams.set("page", "1");
 
   console.log(`  Fetching WA gallery: ${url}`);
-  const res = await fetch(url.toString());
+  const res = await waFetch(url.toString());
   if (!res.ok) throw new Error(`Gallery fetch failed: ${res.status}`);
 
   const html = await res.text();
