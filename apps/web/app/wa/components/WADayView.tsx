@@ -121,7 +121,7 @@ export function WADayView({ date, dateLabel, initialChamber, chambers, available
         <div>
           <p className="text-sm text-gray-400 mb-1">{dateLabel}</p>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-            Questions Without Notice
+            Question Time
           </h1>
           <p className="text-sm text-gray-500 mt-1 mb-3">
             {chamberLabel} · {realQuestions.length} questions
@@ -165,7 +165,7 @@ export function WADayView({ date, dateLabel, initialChamber, chambers, available
           </div>
         ) : (
           <p className="text-sm text-gray-400">
-            No Questions Without Notice found for the {chamberLabel} on this sitting day. It may
+            No Question Time found for the {chamberLabel} on this sitting day. It may
             still be processing.
           </p>
         )}

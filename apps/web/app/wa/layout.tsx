@@ -5,7 +5,7 @@ import Image from "next/image";
 export const metadata: Metadata = {
   title: "On Notice WA — Western Australian Parliament Daily Feed",
   description:
-    "Questions without notice and parliamentary business from the WA Legislative Assembly and Council.",
+    "Question time and parliamentary business from the WA Legislative Assembly and Council.",
   openGraph: {
     siteName: "On Notice WA",
     type: "website",
