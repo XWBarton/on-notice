@@ -316,18 +316,60 @@ async function processDebates(
 
   // Audio — each debate maps to a gallery chapter (pre-trimmed to one proceeding).
   const chamberKey: WAChamber = parliamentId === "wa_la" ? "assembly" : "council";
-  const types = [...new Set(parsed.map((p) => p.type))];
-  // Build a normalised-title → { uuid, chapter } index per category for this date.
-  const galleryIndex = new Map<string, { uuid: string; chapter: number | null }>();
-  for (const type of types) {
+
+  // Resolve a gallery video (uuid + chapter) per debate section. The Assembly
+  // gallery titles each card with its subject (match by normalised title); the
+  // Council labels every card generically ("Member statement"), so when titles
+  // don't disambiguate we fall back to positional matching — only when the
+  // count of still-unmatched debates equals the count of unused videos, pairing
+  // them in chronological order (section ↔ chapter).
+  const videoBySection = new Map<number, { uuid: string; chapter: number | null }>();
+  const byType = new Map<ProceedingType, Parsed[]>();
+  for (const d of parsed) {
+    const list = byType.get(d.type) ?? [];
+    list.push(d);
+    byType.set(d.type, list);
+  }
+
+  for (const [type, debs] of byType) {
+    let listings: Awaited<ReturnType<typeof fetchGalleryListings>>;
     try {
-      const listings = await fetchGalleryListings(chamberKey, GALLERY_CATEGORY[type]);
-      for (const l of listings) {
-        if (l.date !== date) continue;
-        galleryIndex.set(normTitle(l.title), { uuid: l.uuid, chapter: l.chapter });
-      }
+      listings = (await fetchGalleryListings(chamberKey, GALLERY_CATEGORY[type])).filter((l) => l.date === date);
     } catch (err) {
       console.warn(`  Gallery fetch failed for ${GALLERY_CATEGORY[type]} (non-fatal):`, err);
+      continue;
+    }
+
+    // 1. Title match. Skip generic cards whose title is just the category name.
+    const genericTitle = normTitle(GALLERY_CATEGORY[type]);
+    const titleIndex = new Map<string, { uuid: string; chapter: number | null }>();
+    for (const l of listings) {
+      const k = normTitle(l.title);
+      if (k && k !== genericTitle) titleIndex.set(k, { uuid: l.uuid, chapter: l.chapter });
+    }
+    const usedChapters = new Set<number | null>();
+    const unmatched: Parsed[] = [];
+    for (const d of debs) {
+      const key = normTitle(d.subject);
+      let m = titleIndex.get(key);
+      if (!m) {
+        // Substring fallback — gallery and Hansard titles occasionally differ slightly.
+        for (const [gk, gv] of titleIndex) {
+          if (gk.includes(key) || key.includes(gk)) { m = gv; break; }
+        }
+      }
+      if (m) { videoBySection.set(d.section, m); usedChapters.add(m.chapter); }
+      else unmatched.push(d);
+    }
+
+    // 2. Positional fallback (generic-title galleries, e.g. the Council).
+    const free = listings
+      .filter((l) => !usedChapters.has(l.chapter))
+      .sort((a, b) => (a.chapter ?? 0) - (b.chapter ?? 0));
+    if (unmatched.length > 0 && unmatched.length === free.length) {
+      unmatched.sort((a, b) => a.section - b.section);
+      unmatched.forEach((d, i) => videoBySection.set(d.section, { uuid: free[i].uuid, chapter: free[i].chapter }));
+      console.log(`  ${GALLERY_CATEGORY[type]}: matched ${free.length} clip(s) by order (generic gallery titles)`);
     }
   }
 
@@ -339,14 +381,7 @@ async function processDebates(
       : false;
     if (prior?.audio_clip_url && unchanged) continue;
 
-    const key = normTitle(d.subject);
-    let match = galleryIndex.get(key);
-    if (!match) {
-      // Substring fallback — gallery and Hansard titles occasionally differ slightly.
-      for (const [gk, gv] of galleryIndex) {
-        if (gk.includes(key) || key.includes(gk)) { match = gv; break; }
-      }
-    }
+    const match = videoBySection.get(d.section);
     if (!match) continue; // no gallery video → debate stays text-only
 
     try {
