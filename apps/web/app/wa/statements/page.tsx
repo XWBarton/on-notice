@@ -9,8 +9,8 @@ interface PageProps {
   searchParams: Promise<{ chamber?: string }>;
 }
 
-// Bare /debates → most recent sitting day's debates (mirrors the WA home redirect).
-export default async function WADebatesIndexPage({ searchParams }: PageProps) {
+// Bare /statements → most recent sitting day's statements (mirrors the WA home redirect).
+export default async function WAStatementsIndexPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const chamber: Chamber = params.chamber === "lc" ? "wa_lc" : "wa_la";
   const chamberQuery = chamber === "wa_lc" ? "?chamber=lc" : "";
@@ -35,5 +35,5 @@ export default async function WADebatesIndexPage({ searchParams }: PageProps) {
     );
   }
 
-  redirect(`/${(sittingDay as { sitting_date: string }).sitting_date}/debates${chamberQuery}`);
+  redirect(`/${(sittingDay as { sitting_date: string }).sitting_date}/statements${chamberQuery}`);
 }

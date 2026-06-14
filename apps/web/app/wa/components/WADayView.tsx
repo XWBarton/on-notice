@@ -166,10 +166,10 @@ export function WADayView({ date, dateLabel, initialChamber, chambers, available
             {dixers.length > 0 ? ` · ${dixers.length} Dorothy Dixer${dixers.length !== 1 ? "s" : ""} hidden` : ""}
           </p>
           <a
-            href={`/${date}/debates${chamberQuery}`}
+            href={`/${date}/statements${chamberQuery}`}
             className="inline-block text-sm font-medium text-blue-600 hover:underline mt-1 mb-3"
           >
-            View debates →
+            View statements →
           </a>
           {data.sittingDay?.audio_url && (
             <SessionPlayer

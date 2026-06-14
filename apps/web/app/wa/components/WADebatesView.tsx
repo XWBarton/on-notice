@@ -59,7 +59,7 @@ export function WADebatesView({ date, dateLabel, initialChamber, chambers, avail
 
   const switchChamber = (next: Chamber) => {
     setChamber(next);
-    window.history.replaceState(null, "", `/${date}/debates${next === "wa_lc" ? "?chamber=lc" : ""}`);
+    window.history.replaceState(null, "", `/${date}/statements${next === "wa_lc" ? "?chamber=lc" : ""}`);
   };
 
   return (
@@ -98,7 +98,7 @@ export function WADebatesView({ date, dateLabel, initialChamber, chambers, avail
             <label className="text-sm text-gray-500">Date:</label>
             <select
               value={date}
-              onChange={(e) => router.push(`/${e.target.value}/debates${chamberQuery}`)}
+              onChange={(e) => router.push(`/${e.target.value}/statements${chamberQuery}`)}
               className="text-sm border border-gray-200 rounded-md px-2 py-1.5 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-300"
             >
               {availableDates.map((d) => (
@@ -119,7 +119,7 @@ export function WADebatesView({ date, dateLabel, initialChamber, chambers, avail
       <div className="space-y-6">
         <div>
           <p className="text-sm text-gray-400 mb-1">{dateLabel}</p>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Debates</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Statements</h1>
           <p className="text-sm text-gray-500 mt-1">
             {chamberLabel} · {data.debates.length} item{data.debates.length !== 1 ? "s" : ""}
           </p>
@@ -172,7 +172,7 @@ export function WADebatesView({ date, dateLabel, initialChamber, chambers, avail
           </div>
         ) : (
           <p className="text-sm text-gray-400">
-            No debates found for the {chamberLabel} on this sitting day. They may still
+            No statements found for the {chamberLabel} on this sitting day. They may still
             be processing.
           </p>
         )}
