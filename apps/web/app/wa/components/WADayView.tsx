@@ -48,13 +48,32 @@ export function WADayView({ date, dateLabel, initialChamber, chambers, available
   const router = useRouter();
   const [chamber, setChamber] = useState<Chamber>(initialChamber);
   const [showDixers, setShowDixers] = useState(false);
+  const [partyFilter, setPartyFilter] = useState<string | null>(null);
   const chamberQuery = chamber === "wa_lc" ? "?chamber=lc" : "";
   const chamberLabel = CHAMBERS.find((c) => c.id === chamber)!.label;
   const data = chambers[chamber];
 
   const realQuestions = data.questions.filter((q) => !q.is_dorothy_dixer);
   const dixers = data.questions.filter((q) => q.is_dorothy_dixer);
-  const visibleQuestions = showDixers ? data.questions : realQuestions;
+  const baseQuestions = showDixers ? data.questions : realQuestions;
+
+  // Distinct asker parties among the base questions, in first-seen order
+  const parties: { short_name: string; colour_hex: string }[] = [];
+  const seen = new Set<string>();
+  for (const q of baseQuestions) {
+    const p = q.asker?.parties;
+    if (p && !seen.has(p.short_name)) {
+      seen.add(p.short_name);
+      parties.push(p);
+    }
+  }
+
+  // Drop a stale filter if the selected party is no longer present (e.g. after
+  // hiding dixers or switching chamber)
+  const activeFilter = partyFilter && seen.has(partyFilter) ? partyFilter : null;
+  const visibleQuestions = activeFilter
+    ? baseQuestions.filter((q) => q.asker?.parties?.short_name === activeFilter)
+    : baseQuestions;
 
   // Deep link to a question (#q-N): reveal it if it's a hidden Dorothy Dixer,
   // then scroll it into view. Client-rendered content means native hash
@@ -159,16 +178,51 @@ export function WADayView({ date, dateLabel, initialChamber, chambers, available
 
         {data.questions.length > 0 ? (
           <div>
-            {dixers.length > 0 && (
-              <div className="flex justify-end mb-3">
-                <button
-                  onClick={() => setShowDixers((v) => !v)}
-                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-                >
-                  {showDixers
-                    ? `Hide ${dixers.length} Dorothy Dixer${dixers.length !== 1 ? "s" : ""}`
-                    : `Show ${dixers.length} Dorothy Dixer${dixers.length !== 1 ? "s" : ""}`}
-                </button>
+            {(parties.length > 1 || dixers.length > 0) && (
+              <div className="flex items-center gap-2 justify-between mb-3">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {parties.length > 1 && (
+                    <>
+                      <button
+                        onClick={() => setPartyFilter(null)}
+                        className={`text-xs font-semibold px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
+                          activeFilter === null
+                            ? "bg-gray-800 text-white border-gray-800"
+                            : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
+                        }`}
+                      >
+                        All
+                      </button>
+                      {parties.map((p) => {
+                        const isActive = activeFilter === p.short_name;
+                        return (
+                          <button
+                            key={p.short_name}
+                            onClick={() => setPartyFilter(isActive ? null : p.short_name)}
+                            className="text-xs font-semibold px-2 py-0.5 rounded-full border transition-colors cursor-pointer"
+                            style={
+                              isActive
+                                ? { backgroundColor: p.colour_hex, borderColor: p.colour_hex, color: "white" }
+                                : { color: p.colour_hex, borderColor: `${p.colour_hex}66`, backgroundColor: "white" }
+                            }
+                          >
+                            {p.short_name}
+                          </button>
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+                {dixers.length > 0 && (
+                  <button
+                    onClick={() => setShowDixers((v) => !v)}
+                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer shrink-0"
+                  >
+                    {showDixers
+                      ? `Hide ${dixers.length} Dorothy Dixer${dixers.length !== 1 ? "s" : ""}`
+                      : `Show ${dixers.length} Dorothy Dixer${dixers.length !== 1 ? "s" : ""}`}
+                  </button>
+                )}
               </div>
             )}
             <div className="space-y-3">

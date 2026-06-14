@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { QuestionCard, type TranscriptEntry } from "./QuestionCard";
+import { QuestionCard, partyBadgeProps, type TranscriptEntry } from "./QuestionCard";
 
 type Question = {
   id: number;
@@ -29,12 +29,35 @@ type Question = {
   } | null;
 };
 
+// Normalise a question's asker to a party badge (short_name + colour)
+function askerParty(q: Question) {
+  return partyBadgeProps(q.asker?.parties?.short_name ?? q.asker_party);
+}
+
 export function QuestionSection({ questions, hansardUrl }: { questions: Question[]; hansardUrl?: string | null }) {
   const [showDixers, setShowDixers] = useState(false);
+  const [partyFilter, setPartyFilter] = useState<string | null>(null);
 
   const realQuestions = questions.filter((q) => !q.is_dorothy_dixer);
   const dixers = questions.filter((q) => q.is_dorothy_dixer);
-  const visible = showDixers ? questions : realQuestions;
+  const baseVisible = showDixers ? questions : realQuestions;
+
+  // Distinct asker parties among the visible questions, in first-seen order
+  const parties: { short_name: string; colour_hex: string }[] = [];
+  const seen = new Set<string>();
+  for (const q of baseVisible) {
+    const p = askerParty(q);
+    if (p && !seen.has(p.short_name)) {
+      seen.add(p.short_name);
+      parties.push(p);
+    }
+  }
+
+  // Drop a stale filter if the selected party is no longer present
+  const activeFilter = partyFilter && seen.has(partyFilter) ? partyFilter : null;
+  const visible = activeFilter
+    ? baseVisible.filter((q) => askerParty(q)?.short_name === activeFilter)
+    : baseVisible;
 
   // Deep link to a question (#q-N): reveal it if it's a hidden Dorothy Dixer,
   // then scroll it into view. Client-rendered content means native hash
@@ -71,6 +94,38 @@ export function QuestionSection({ questions, hansardUrl }: { questions: Question
           </button>
         )}
       </div>
+
+      {parties.length > 1 && (
+        <div className="flex items-center gap-1.5 flex-wrap mb-3">
+          <button
+            onClick={() => setPartyFilter(null)}
+            className={`text-xs font-semibold px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
+              activeFilter === null
+                ? "bg-gray-800 text-white border-gray-800"
+                : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
+            }`}
+          >
+            All
+          </button>
+          {parties.map((p) => {
+            const isActive = activeFilter === p.short_name;
+            return (
+              <button
+                key={p.short_name}
+                onClick={() => setPartyFilter(isActive ? null : p.short_name)}
+                className="text-xs font-semibold px-2 py-0.5 rounded-full border transition-colors cursor-pointer"
+                style={
+                  isActive
+                    ? { backgroundColor: p.colour_hex, borderColor: p.colour_hex, color: "white" }
+                    : { color: p.colour_hex, borderColor: p.colour_hex, backgroundColor: "white" }
+                }
+              >
+                {p.short_name}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="space-y-3">
         {visible.map((question) => (

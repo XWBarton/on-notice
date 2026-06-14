@@ -43,7 +43,7 @@ const PARTY_LOOKUP: Record<string, { short_name: string; colour: string }> = {
   "United Australia Party": { short_name: "UAP", colour: "#FDD835" },
 };
 
-function partyBadgeProps(raw: string | null | undefined) {
+export function partyBadgeProps(raw: string | null | undefined) {
   if (!raw) return null;
   const p = PARTY_LOOKUP[raw];
   return p ? { short_name: p.short_name, colour_hex: p.colour } : { short_name: raw, colour_hex: "#757575" };
