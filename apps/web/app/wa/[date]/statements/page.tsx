@@ -13,7 +13,7 @@ interface PageProps {
   searchParams: Promise<{ chamber?: string }>;
 }
 
-export default async function WADebatesPage({ params, searchParams }: PageProps) {
+export default async function WAStatementsPage({ params, searchParams }: PageProps) {
   const { date } = await params;
   const { chamber: chamberParam } = await searchParams;
   const initialChamber: Chamber = chamberParam === "lc" ? "wa_lc" : "wa_la";
@@ -44,7 +44,7 @@ export default async function WADebatesPage({ params, searchParams }: PageProps)
   if (days.length === 0) {
     const latestDate = allDatesRaw?.[0]?.sitting_date as string | undefined;
     if (latestDate && latestDate !== date) {
-      redirect(`/${latestDate}/debates${chamberParam === "lc" ? "?chamber=lc" : ""}`);
+      redirect(`/${latestDate}/statements${chamberParam === "lc" ? "?chamber=lc" : ""}`);
     }
     notFound();
   }
