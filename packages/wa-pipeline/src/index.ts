@@ -285,6 +285,19 @@ async function main() {
   }
   console.log(`  Found ${allQuestions.length} questions`);
 
+  // Snapshot existing rows *before* the upsert overwrites them. WA Hansard
+  // renumbers qonNums between runs, so a question_number can point at entirely
+  // different text on this run than it did last time. We key summary reuse off
+  // the text that was actually summarised, not the (unstable) number — see 5b.
+  const { data: priorRows } = await db
+    .from("questions")
+    .select("question_number, ai_summary, question_text, answer_text")
+    .eq("sitting_day_id", sittingDayId);
+  const priorByNumber = new Map(
+    ((priorRows ?? []) as { question_number: number; ai_summary: string | null; question_text: string | null; answer_text: string | null }[])
+      .map((r) => [r.question_number, r])
+  );
+
   // 5. Resolve member IDs, classify Dorothy Dixers, and upsert questions
   console.log("\nStep 5: Storing questions...");
   let dixerCount = 0;
@@ -351,22 +364,19 @@ async function main() {
   // 5b. AI summaries
   console.log("\nStep 5b: Generating AI summaries...");
   // Questions summarised on a previous run keep their summary — re-runs
-  // (e.g. --force after a parser fix) only spend AI on new questions.
-  const { data: existingSummaries } = await db
-    .from("questions")
-    .select("question_number, ai_summary")
-    .eq("sitting_day_id", sittingDayId)
-    .not("ai_summary", "is", null);
-  const summarised = new Map(
-    ((existingSummaries ?? []) as { question_number: number; ai_summary: string }[])
-      .map((r) => [r.question_number, r.ai_summary])
-  );
+  // (e.g. --force after a parser fix) only spend AI on new questions. Reuse is
+  // gated on the summarised text being unchanged: because Hansard renumbers
+  // qonNums between runs, a question_number whose text now differs from what we
+  // previously stored is a *different* question, and its old summary is stale.
   const enrichedQuestions: Array<{ asker: string; minister: string; subject: string | null; summary: string | null }> = [];
   for (const q of allQuestions) {
     if (!q.questionText && !q.answerText) continue;
-    const existing = summarised.get(q.number);
-    if (existing) {
-      enrichedQuestions.push({ asker: q.asker, minister: q.minister, subject: q.subject || null, summary: existing });
+    const prior = priorByNumber.get(q.number);
+    const textUnchanged =
+      (prior?.question_text ?? "") === (q.questionText ?? "") &&
+      (prior?.answer_text ?? "") === (q.answerText ?? "");
+    if (prior?.ai_summary && textUnchanged) {
+      enrichedQuestions.push({ asker: q.asker, minister: q.minister, subject: q.subject || null, summary: prior.ai_summary });
       continue;
     }
     try {
