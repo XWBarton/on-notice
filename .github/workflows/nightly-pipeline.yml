@@ -22,6 +22,11 @@ on:
         required: false
         type: boolean
         default: false
+      force:
+        description: 'Reprocess a day already marked complete'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   # ── Federal pipeline (House + Senate) ──────────────────────────────────────
@@ -89,6 +94,7 @@ jobs:
         run: |
           BASE="--parliament ${{ matrix.parliament }}"
           if [ "${{ github.event.inputs.skip_audio || 'false' }}" = "true" ]; then BASE="$BASE --skip-audio"; fi
+          if [ "${{ github.event.inputs.force || 'false' }}" = "true" ]; then BASE="$BASE --force"; fi
           DATE_ARG="${{ github.event.inputs.date }}"
           if [ -n "$DATE_ARG" ]; then
             # Explicit date (manual dispatch) — process just that day.
@@ -168,6 +174,7 @@ jobs:
         run: |
           BASE="--parliament ${{ matrix.parliament }}"
           if [ "${{ github.event.inputs.skip_audio || 'false' }}" = "true" ]; then BASE="$BASE --skip-audio"; fi
+          if [ "${{ github.event.inputs.force || 'false' }}" = "true" ]; then BASE="$BASE --force"; fi
           DATE_ARG="${{ github.event.inputs.date }}"
           if [ -n "$DATE_ARG" ]; then
             # Explicit date (manual dispatch) — process just that day.

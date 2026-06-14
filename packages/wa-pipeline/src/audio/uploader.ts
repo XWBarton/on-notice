@@ -30,6 +30,15 @@ export async function uploadQuestionClip(
   return uploadAudioFile(localPath, `audio/${parliamentId}/${date}/q${questionNumber}.mp3`);
 }
 
+export async function uploadDebateClip(
+  localPath: string,
+  parliamentId: string,
+  date: string,
+  section: number
+): Promise<string> {
+  return uploadAudioFile(localPath, `audio/${parliamentId}/${date}/debate-${section}.mp3`);
+}
+
 export async function uploadChapters(
   localPath: string,
   parliamentId: string,
