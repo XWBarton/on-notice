@@ -7,17 +7,19 @@
 
 import { db } from "./db/client";
 import { syncWAMembers } from "./scrapers/wa-members";
-import { fetchQuestionsWithoutNotice } from "./scrapers/wa-gallery";
+import { fetchQuestionsWithoutNotice, fetchGalleryListings, type WAChamber } from "./scrapers/wa-gallery";
 import { fetchVideoMeta } from "./scrapers/wa-video";
 import { downloadHlsAudio } from "./audio/downloader";
-import { uploadEpisode, uploadQuestionClip, uploadChapters } from "./audio/uploader";
+import { uploadEpisode, uploadQuestionClip, uploadChapters, uploadDebateClip } from "./audio/uploader";
 import { fetchChapterCaptions, renderTranscript } from "./audio/captions";
 import { buildEpisode, embedChapters, type QuestionSegment } from "./audio/editor";
 import { timestampWAQuestions } from "./ai/timestamp-questions";
 import { getAudioDuration } from "./audio/duration";
 import { summariseWAQuestion } from "./ai/summarise";
 import { summariseWADay } from "./ai/summarise-day";
-import { WA_PARLIAMENTS, WA_GOVERNMENT_PARTIES, WAParliamentId } from "./config";
+import { summariseWADebate } from "./ai/summarise-debate";
+import { parseTocDebates, parseDebateXML, type ProceedingType } from "./parsers/debate";
+import { WA_PARLIAMENTS, WA_GOVERNMENT_PARTIES, WAParliamentId, partyById } from "./config";
 import { detectWADorothyDixer } from "./ai/detect-dixer";
 import * as path from "path";
 import * as os from "os";
@@ -43,11 +45,23 @@ const CHAMBER_PATH: Record<WAParliamentId, string> = {
   wa_lc: "uh",
 };
 
-async function fetchQWNSections(parliamentId: WAParliamentId, date: string): Promise<number[]> {
+async function fetchTocHtml(parliamentId: WAParliamentId, date: string): Promise<string | null> {
   const chamber = CHAMBER_PATH[parliamentId];
   const res = await fetch(`${HANSARD_BASE}/hansard/daily/${chamber}/${date}/`);
-  if (!res.ok) return [];
-  const html = await res.text();
+  if (!res.ok) return null;
+  return res.text();
+}
+
+async function fetchSectionXML(parliamentId: WAParliamentId, date: string, section: number): Promise<string | null> {
+  const chamber = CHAMBER_PATH[parliamentId];
+  const res = await fetch(`${HANSARD_BASE}/hansard/daily/${chamber}/${date}/extract/${section}/download`);
+  if (!res.ok) return null;
+  return res.text();
+}
+
+async function fetchQWNSections(parliamentId: WAParliamentId, date: string): Promise<number[]> {
+  const html = await fetchTocHtml(parliamentId, date);
+  if (!html) return [];
 
   const lower = html.toLowerCase();
   const marker = "questions without notice";
@@ -173,6 +187,184 @@ async function resolveMember(
     .limit(1)
     .maybeSingle();
   return (data as { id: string; party_id: string | null } | null) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Debates (grievances, ministerial statements, member statements)
+// ---------------------------------------------------------------------------
+
+interface DebateSpeechRow {
+  speaker: string;
+  member_id: string | null;
+  party_short: string | null;
+  party_colour: string | null;
+  text: string;
+}
+
+const GALLERY_CATEGORY: Record<ProceedingType, string> = {
+  grievance: "Grievance",
+  ministerial_statement: "Ministerial Statement",
+  member_statement: "Member Statement",
+};
+
+/** Normalise a title for matching Hansard subjects against gallery card titles. */
+function normTitle(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[‒-―‘’“”]/g, " ") // dashes & smart quotes
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function transcriptText(speeches: DebateSpeechRow[]): string {
+  return speeches.map((s) => `${s.speaker}: ${s.text}`).join("\n");
+}
+
+/**
+ * Process debate proceedings for a sitting day: enumerate grievance/ministerial/
+ * member-statement sections from the TOC, parse each section's speeches, resolve
+ * speakers to members, AI-summarise, and attach the matching gallery audio clip
+ * (each is a pre-trimmed chapter of the day's broadcast — no splitting needed).
+ */
+async function processDebates(
+  parliamentId: WAParliamentId,
+  date: string,
+  sittingDayId: number,
+  skipAudio: boolean
+) {
+  const html = await fetchTocHtml(parliamentId, date);
+  if (!html) { console.log("  No TOC — skipping debates"); return; }
+  const tocDebates = parseTocDebates(html);
+  if (tocDebates.length === 0) { console.log("  No debate sections found"); return; }
+  console.log(`  Found ${tocDebates.length} debate section(s)`);
+
+  // Snapshot existing rows so re-runs reuse summaries/audio when content is unchanged.
+  const { data: priorRows } = await db
+    .from("debates")
+    .select("hansard_section, ai_summary, transcript_json, audio_clip_url")
+    .eq("sitting_day_id", sittingDayId);
+  const priorBySection = new Map(
+    ((priorRows ?? []) as { hansard_section: number; ai_summary: string | null; transcript_json: DebateSpeechRow[] | null; audio_clip_url: string | null }[])
+      .map((r) => [r.hansard_section, r])
+  );
+
+  // Parse + resolve + upsert each debate section.
+  type Parsed = { section: number; type: ProceedingType; subject: string; speeches: DebateSpeechRow[] };
+  const parsed: Parsed[] = [];
+  let seq = 0;
+  for (const d of tocDebates) {
+    const xml = await fetchSectionXML(parliamentId, date, d.section);
+    if (!xml) continue;
+    const rawSpeeches = parseDebateXML(xml);
+    if (rawSpeeches.length === 0) continue;
+
+    const speeches: DebateSpeechRow[] = [];
+    for (const s of rawSpeeches) {
+      const lastName = s.speaker.split(/\s+/).pop() ?? s.speaker;
+      const member = await resolveMember(lastName, parliamentId);
+      const party = partyById(member?.party_id ?? null);
+      speeches.push({
+        speaker: s.speaker,
+        member_id: member?.id ?? null,
+        party_short: party?.short_name ?? null,
+        party_colour: party?.colour_hex ?? null,
+        text: s.text,
+      });
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (db as any).from("debates").upsert({
+      sitting_day_id: sittingDayId,
+      hansard_section: d.section,
+      proceeding_type: d.type,
+      sequence: seq++,
+      title: d.subject,
+      transcript_json: speeches,
+    }, { onConflict: "sitting_day_id,hansard_section" });
+    if (error) throw new Error(`Debate upsert failed (s${d.section}): ${error.message}`);
+    parsed.push({ section: d.section, type: d.type, subject: d.subject, speeches });
+  }
+
+  // Remove stale debate rows from earlier runs (guarded on a non-empty parse).
+  const freshSections = parsed.map((p) => p.section);
+  if (freshSections.length > 0) {
+    await db.from("debates").delete()
+      .eq("sitting_day_id", sittingDayId)
+      .not("hansard_section", "in", `(${freshSections.join(",")})`);
+  }
+  console.log(`  Stored ${parsed.length} debate(s)`);
+
+  // AI summaries — reuse the prior summary when the transcript is unchanged.
+  for (const d of parsed) {
+    const prior = priorBySection.get(d.section);
+    const unchanged = prior?.transcript_json
+      ? transcriptText(prior.transcript_json) === transcriptText(d.speeches)
+      : false;
+    if (prior?.ai_summary && unchanged) continue;
+    try {
+      const summary = await summariseWADebate({ type: d.type, title: d.subject, speeches: d.speeches });
+      await db.from("debates").update({ ai_summary: summary })
+        .eq("sitting_day_id", sittingDayId).eq("hansard_section", d.section);
+      console.log(`  s${d.section}: summarised`);
+    } catch (err) {
+      console.warn(`  s${d.section}: debate summary failed (non-fatal):`, err);
+    }
+  }
+
+  if (skipAudio) return;
+
+  // Audio — each debate maps to a gallery chapter (pre-trimmed to one proceeding).
+  const chamberKey: WAChamber = parliamentId === "wa_la" ? "assembly" : "council";
+  const types = [...new Set(parsed.map((p) => p.type))];
+  // Build a normalised-title → { uuid, chapter } index per category for this date.
+  const galleryIndex = new Map<string, { uuid: string; chapter: number | null }>();
+  for (const type of types) {
+    try {
+      const listings = await fetchGalleryListings(chamberKey, GALLERY_CATEGORY[type]);
+      for (const l of listings) {
+        if (l.date !== date) continue;
+        galleryIndex.set(normTitle(l.title), { uuid: l.uuid, chapter: l.chapter });
+      }
+    } catch (err) {
+      console.warn(`  Gallery fetch failed for ${GALLERY_CATEGORY[type]} (non-fatal):`, err);
+    }
+  }
+
+  const outputDir = path.join(os.tmpdir(), `on-notice-wa-${date}-${parliamentId}-debates`);
+  for (const d of parsed) {
+    const prior = priorBySection.get(d.section);
+    const unchanged = prior?.transcript_json
+      ? transcriptText(prior.transcript_json) === transcriptText(d.speeches)
+      : false;
+    if (prior?.audio_clip_url && unchanged) continue;
+
+    const key = normTitle(d.subject);
+    let match = galleryIndex.get(key);
+    if (!match) {
+      // Substring fallback — gallery and Hansard titles occasionally differ slightly.
+      for (const [gk, gv] of galleryIndex) {
+        if (gk.includes(key) || key.includes(gk)) { match = gv; break; }
+      }
+    }
+    if (!match) continue; // no gallery video → debate stays text-only
+
+    try {
+      const meta = await fetchVideoMeta(match.uuid, match.chapter);
+      const clipPath = await downloadHlsAudio(meta.audioUrl, outputDir, `debate-${d.section}.mp3`);
+      const clipUrl = await uploadDebateClip(clipPath, parliamentId, date, d.section);
+      const durationSec = await getAudioDuration(clipPath);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (db as any).from("debates").update({
+        audio_clip_url: clipUrl,
+        audio_duration_sec: durationSec,
+        gallery_chapter: match.chapter,
+      }).eq("sitting_day_id", sittingDayId).eq("hansard_section", d.section);
+      console.log(`  s${d.section}: audio attached (ch ${match.chapter})`);
+    } catch (err) {
+      console.warn(`  s${d.section}: audio failed (non-fatal):`, err);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -547,7 +739,15 @@ async function main() {
     await db.from("sitting_days").update({ pipeline_status: "complete" }).eq("id", sittingDayId);
   }
 
-  // 7. Revalidate site
+  // 7. Debates (grievances, ministerial + member statements)
+  console.log("\nStep 7: Processing debates...");
+  try {
+    await processDebates(parliamentId, date, sittingDayId, skipAudio);
+  } catch (err) {
+    console.warn("  Debate processing failed (non-fatal):", err);
+  }
+
+  // 8. Revalidate site
   await revalidateSite(parliamentId, date);
   console.log("\n=== WA Pipeline complete ===");
 }

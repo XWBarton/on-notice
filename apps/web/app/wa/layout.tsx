@@ -28,6 +28,7 @@ export default function WALayout({ children }: { children: React.ReactNode }) {
             </div>
           </a>
           <nav className="flex gap-6 text-sm text-gray-600">
+            <a href="/debates" className="hover:text-gray-900">Debates</a>
             <a href="/members" className="hover:text-gray-900">Members</a>
             <a href="/calendar" className="hover:text-gray-900">Calendar</a>
             <a href="/podcast" className="hover:text-gray-900">Podcast</a>

@@ -26,6 +26,14 @@ export const WA_PARTIES: Record<string, {
   IND:  { id: "wa_ind",  name: "Independent",                  short_name: "Ind",       colour_hex: "#757575" },
 };
 
+/** Look up a party's display name + colour by its resolved id (e.g. "wa_alp").
+ *  Used to denormalise party badges into debate transcripts at pipeline time. */
+export function partyById(partyId: string | null): { short_name: string; colour_hex: string } | null {
+  if (!partyId) return null;
+  const match = Object.values(WA_PARTIES).find((p) => p.id === partyId);
+  return match ? { short_name: match.short_name, colour_hex: match.colour_hex } : null;
+}
+
 /** Normalise a raw party string from the site to a WA_PARTIES key */
 export function resolvePartyId(raw: string): string {
   const upper = raw.trim().toUpperCase();

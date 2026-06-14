@@ -33,15 +33,18 @@ function parseCardDate(text: string): string | null {
 }
 
 /**
- * Fetch the WA Parliament video gallery and return "Questions Without Notice"
- * listings for the given chamber, newest first.
+ * Fetch the WA Parliament video gallery for a given chamber + proceeding
+ * category, newest first. Each gallery item is a `?chapter=N` segment of the
+ * day's broadcast, already trimmed to that single proceeding.
  */
-export async function fetchQuestionsWithoutNotice(
-  chamber: WAChamber
+export async function fetchGalleryListings(
+  chamber: WAChamber,
+  category: string,
+  pagesize = 20
 ): Promise<WAVideoListing[]> {
   const url = new URL(`${BASE_URL}/watch/gallery/${chamber}`);
-  url.searchParams.set("category", "Questions Without Notice");
-  url.searchParams.set("pagesize", "20");
+  url.searchParams.set("category", category);
+  url.searchParams.set("pagesize", String(pagesize));
   url.searchParams.set("page", "1");
 
   console.log(`  Fetching WA gallery: ${url}`);
@@ -69,6 +72,15 @@ export async function fetchQuestionsWithoutNotice(
     });
   });
 
-  console.log(`  Found ${listings.length} "Questions Without Notice" items`);
+  console.log(`  Found ${listings.length} "${category}" items`);
   return listings;
+}
+
+/**
+ * Fetch "Questions Without Notice" listings for a chamber, newest first.
+ */
+export async function fetchQuestionsWithoutNotice(
+  chamber: WAChamber
+): Promise<WAVideoListing[]> {
+  return fetchGalleryListings(chamber, "Questions Without Notice");
 }

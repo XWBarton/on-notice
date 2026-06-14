@@ -161,10 +161,16 @@ export function WADayView({ date, dateLabel, initialChamber, chambers, available
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">
             Question Time
           </h1>
-          <p className="text-sm text-gray-500 mt-1 mb-3">
+          <p className="text-sm text-gray-500 mt-1">
             {chamberLabel} · {realQuestions.length} questions
             {dixers.length > 0 ? ` · ${dixers.length} Dorothy Dixer${dixers.length !== 1 ? "s" : ""} hidden` : ""}
           </p>
+          <a
+            href={`/${date}/debates${chamberQuery}`}
+            className="inline-block text-sm font-medium text-blue-600 hover:underline mt-1 mb-3"
+          >
+            View debates →
+          </a>
           {data.sittingDay?.audio_url && (
             <SessionPlayer
               key={chamber}

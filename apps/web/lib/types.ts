@@ -131,6 +131,32 @@ export interface Database {
         Insert: Omit<Database["public"]["Tables"]["questions"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["questions"]["Row"]>;
       };
+      debates: {
+        Row: {
+          id: number;
+          sitting_day_id: number;
+          hansard_section: number | null;
+          proceeding_type: string | null;
+          sequence: number | null;
+          title: string | null;
+          ai_summary: string | null;
+          transcript_json:
+            | Array<{
+                speaker: string;
+                member_id: string | null;
+                party_short: string | null;
+                party_colour: string | null;
+                text: string;
+              }>
+            | null;
+          audio_clip_url: string | null;
+          audio_duration_sec: number | null;
+          gallery_chapter: number | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["debates"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["debates"]["Row"]>;
+      };
       episodes: {
         Row: {
           id: number;
