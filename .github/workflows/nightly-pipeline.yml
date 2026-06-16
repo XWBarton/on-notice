@@ -118,16 +118,19 @@ jobs:
         run: echo "::error::${{ matrix.parliament }} pipeline failed — check logs above"
 
   # ── WA pipeline (Legislative Assembly + Council) ───────────────────────────
-  # Runs on the morning schedule only (6:30am AWST) for both chambers, plus
-  # manual dispatch with a wa_ parliament. Member sync is non-fatal in the
-  # pipeline, so a 403 on parliament.wa.gov.au (GitHub Actions IPs are sometimes
-  # blocked) no longer kills the run — questions and the daily digest still
-  # process from the members already in the DB.
+  # DISABLED (2026-06-16): parliament.wa.gov.au blocks GitHub Actions' cloud IPs
+  # — not just the member-list endpoints but the Hansard daily TOC fetch too.
+  # Step 2 (fetchQWNSections) therefore returns empty on the runner and every
+  # run logs "No Questions Without Notice found", so this job has only ever been
+  # a silent no-op. WA must be run locally from a residential IP: use the
+  # `wa-run` shell function (sources .env + `npm run pipeline`, audio included).
+  # Re-enable by restoring the `if:` condition below if WA ever stops blocking
+  # the runners (or the pipeline is routed through a non-cloud AU proxy).
   wa:
     name: ${{ matrix.parliament }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    if: (github.event_name == 'schedule' && github.event.schedule == '30 22 * * 0-4') || startsWith(github.event.inputs.parliament, 'wa_')
+    if: false  # was: (github.event_name == 'schedule' && github.event.schedule == '30 22 * * 0-4') || startsWith(github.event.inputs.parliament, 'wa_')
     strategy:
       fail-fast: false
       matrix:
