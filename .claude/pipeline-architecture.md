@@ -361,10 +361,6 @@ rm -rf /tmp/on-notice-audio-*
 ts-node src/index.ts --date 2026-03-25 --skip-audio
 ```
 
-### Test Timestamp Extraction
-- File: `src/test-timestamps.ts` (if exists)
-- Manually call `extractTimestampsWithAI()` with known transcript
-
 ### Environment-Specific
 - CI/CD: GitHub Actions (scheduled nightly)
 - Local dev: Can pass --date to reprocess any sitting day
