@@ -22,32 +22,46 @@ export interface QuestionSegment {
 
 const PRE_BUFFER_SEC = 4; // lead-in covering the presiding officer's call
 const POST_BUFFER_SEC = 1;
+const FADE_SEC = 8;
 
+/**
+ * Cut a raw source range to an MP3, optionally fading the tail out. The fade
+ * signals an edit point (a clip that ends, or that runs into removed content);
+ * for questions that run straight into the next one we skip it (see buildEpisode).
+ */
+async function cutRange(
+  sourcePath: string,
+  sourceStartSec: number,
+  sourceEndSec: number,
+  outputPath: string,
+  fadeOut: boolean
+): Promise<string> {
+  const start = Math.max(0, sourceStartSec);
+  const duration = sourceEndSec - start;
+  if (duration <= 0) throw new Error(`Invalid range: ${sourceStartSec}→${sourceEndSec}`);
+
+  const args = ["-ss", String(start), "-i", sourcePath, "-t", String(duration)];
+  if (fadeOut) {
+    const fadeStart = Math.max(0, duration - FADE_SEC);
+    args.push("-af", `afade=t=out:st=${fadeStart}:d=${FADE_SEC}`);
+  }
+  args.push("-acodec", "libmp3lame", "-ab", "64k", "-y", outputPath);
+
+  await execFileAsync("ffmpeg", args, { timeout: 120_000 });
+  return outputPath;
+}
+
+/**
+ * Cut a standalone per-question clip (the audio shown against each question on
+ * the website): the question's content plus lead-in/out buffers, faded out.
+ */
 export async function cutSegment(
   sourcePath: string,
   startSec: number,
   endSec: number,
   outputPath: string
 ): Promise<string> {
-  const duration = endSec - startSec;
-  if (duration <= 0) throw new Error(`Invalid segment: ${startSec}→${endSec}`);
-
-  const totalDuration = duration + PRE_BUFFER_SEC + POST_BUFFER_SEC;
-  const FADE_SEC = 8;
-  const fadeStart = Math.max(0, totalDuration - FADE_SEC);
-
-  await execFileAsync("ffmpeg", [
-    "-ss", String(Math.max(0, startSec - PRE_BUFFER_SEC)),
-    "-i", sourcePath,
-    "-t", String(totalDuration),
-    "-af", `afade=t=out:st=${fadeStart}:d=${FADE_SEC}`,
-    "-acodec", "libmp3lame",
-    "-ab", "64k",
-    "-y",
-    outputPath,
-  ], { timeout: 120_000 });
-
-  return outputPath;
+  return cutRange(sourcePath, startSec - PRE_BUFFER_SEC, endSec + POST_BUFFER_SEC, outputPath, true);
 }
 
 export async function concatenateAudio(
@@ -107,19 +121,35 @@ export async function buildEpisode(
   const chapterStartSecs = new Map<number, number>();
   let cursorSec = 0; // running start offset within the concatenated episode
 
-  for (const seg of segments) {
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
     if (seg.startSec < 0 || seg.endSec <= seg.startSec) {
       console.warn(`  Skipping Q${seg.questionNumber}: invalid offsets (${seg.startSec}→${seg.endSec})`);
       continue;
     }
+    // Standalone per-question clip (website): faded, with lead-in/out buffers.
     const segPath = path.join(workDir, `q${seg.questionNumber}.mp3`);
     await cutSegment(rawAudioPath, seg.startSec, seg.endSec, segPath);
     clipPaths.set(seg.questionNumber, segPath);
-    if (seg.includeInPodcast !== false) {
-      parts.push(segPath);
-      chapterStartSecs.set(seg.questionNumber, Math.round(cursorSec * 1000) / 1000);
-      cursorSec += await durationOf(segPath);
+
+    if (seg.includeInPodcast === false) continue;
+
+    // WA questions and their answers are short, so consecutive non-dixer
+    // questions run straight into each other. When this question is immediately
+    // followed by another included one (no Dorothy Dixer cut between them),
+    // butt-join the episode part to where the next clip's lead-in begins — no
+    // fade, no overlap, no gap. Only fade when the next part is a real edit
+    // point: a removed dixer follows, or this is the final question.
+    const next = segments[i + 1];
+    const contiguous = next && next.includeInPodcast !== false && next.startSec > seg.startSec;
+    let partPath = segPath;
+    if (contiguous) {
+      partPath = path.join(workDir, `ep-q${seg.questionNumber}.mp3`);
+      await cutRange(rawAudioPath, seg.startSec - PRE_BUFFER_SEC, next.startSec - PRE_BUFFER_SEC, partPath, false);
     }
+    parts.push(partPath);
+    chapterStartSecs.set(seg.questionNumber, Math.round(cursorSec * 1000) / 1000);
+    cursorSec += await durationOf(partPath);
   }
 
   if (parts.length === 0) throw new Error("No valid segments to build episode");

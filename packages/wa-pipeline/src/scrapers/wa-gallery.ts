@@ -78,9 +78,13 @@ export async function fetchGalleryListings(
 
 /**
  * Fetch "Questions Without Notice" listings for a chamber, newest first.
+ * The nightly run only needs the last few days, but a larger page keeps older
+ * sitting days reachable for backfills (the gallery retains QWN videos for
+ * well over a year).
  */
 export async function fetchQuestionsWithoutNotice(
-  chamber: WAChamber
+  chamber: WAChamber,
+  pagesize = 100
 ): Promise<WAVideoListing[]> {
-  return fetchGalleryListings(chamber, "Questions Without Notice");
+  return fetchGalleryListings(chamber, "Questions Without Notice", pagesize);
 }
