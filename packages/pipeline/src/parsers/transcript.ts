@@ -81,7 +81,7 @@ function classifyItalicLine(text: string): TranscriptEntryType {
 }
 
 /**
- * Build a transcript from a rewritexml exchange (speeches + interjections).
+ * Build a transcript from a scrapedxml exchange (speeches + interjections).
  * Party lookup is provided by the caller via the member cache.
  */
 export function buildTranscriptFromExchange(
@@ -100,7 +100,7 @@ export function buildTranscriptFromExchange(
 }
 
 /**
- * Convert rewritexml speaker names to title case.
+ * Convert ALL-CAPS speaker names to title case (fallback when no member DB match).
  * "Senator GHOSH" → "Senator Ghosh", "The PRESIDENT" → "The President"
  */
 function normaliseSpeakerName(name: string): string {

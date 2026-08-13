@@ -13,9 +13,9 @@ import { format } from "date-fns";
 import { db } from "./db/client";
 import { PARLIAMENTS, FEDERAL_PARTIES } from "./config";
 import { syncFederalMembers } from "./scrapers/fed-members";
-import { fetchDebates, fetchDebatesXml, fetchSpeechRows, type OASpeechRow } from "./scrapers/fed-hansard";
+import { fetchDebates, fetchScrapedXml, fetchSpeechRows, type OASpeechRow } from "./scrapers/fed-hansard";
 import { fetchDivisionsForDate } from "./scrapers/tvfy-divisions";
-import { parseDebates, parseDebatesXml } from "./parsers/hansard-xml";
+import { parseDebates, parseScrapedXml } from "./parsers/hansard-xml";
 import { classifyQuestion, getMemberLookup, resetMemberCache } from "./parsers/questions";
 import { buildTranscript, buildTranscriptFromExchange } from "./parsers/transcript";
 import { summariseBill } from "./ai/summarise-bill";
@@ -93,10 +93,20 @@ async function run() {
   console.log("Step 2: Checking for sitting day...");
   const oaType = config.chamber === "lower" ? "representatives" : "senate";
 
-  const debateData = await fetchDebates(date, oaType as "representatives" | "senate");
-  if (!debateData) {
-    console.log(`No debates found for ${date} — parliament likely not sitting. Exiting.`);
-    return;
+  // Scraped XML is published same-day, well ahead of the JSON API (which can lag a
+  // sitting day by 24h+ while OA's own proof→final Hansard publishing catches up) —
+  // try it first and only fall back to the JSON API if it's not there yet.
+  const xmlText = await fetchScrapedXml(date, oaType as "representatives" | "senate").catch((e: Error) => {
+    console.warn(`  Scraped XML fetch failed: ${e.message} — falling back to JSON API`);
+    return null;
+  });
+  let debateData: Awaited<ReturnType<typeof fetchDebates>> = null;
+  if (!xmlText) {
+    debateData = await fetchDebates(date, oaType as "representatives" | "senate");
+    if (!debateData) {
+      console.log(`No debates found for ${date} — parliament likely not sitting. Exiting.`);
+      return;
+    }
   }
 
   const { data: sitting, error: sittingError } = await db
@@ -118,38 +128,28 @@ async function run() {
   console.log(`Sitting day ID: ${sittingDayId}`);
 
   try {
-    // ── Step 3: Parse debates — JSON API primary, XML fallback ───────────────
-    // HoR rewritexml has a nesting bug in the OA feed — use JSON API for representatives only.
-    const USE_XML_PRIMARY = oaType !== "representatives";
+    // ── Step 3: Parse debates — scraped XML primary, JSON API fallback ───────
     console.log("Step 3: Parsing debates...");
     let parseResult: ReturnType<typeof parseDebates>;
-    if (USE_XML_PRIMARY) {
-      const xmlText = await fetchDebatesXml(date, oaType as "representatives" | "senate").catch((e) => {
-        console.warn(`  XML fetch failed: ${e.message} — falling back to JSON API`);
-        return null;
-      });
-      if (xmlText) {
-        const xmlResult = parseDebatesXml(xmlText);
-        if (xmlResult.questions.length > 0) {
-          parseResult = xmlResult;
-        } else {
-          // XML had no questions (may have bills) — fall back to JSON API for questions;
-          // merge XML bills in case JSON API misses any.
-          console.warn("  Rewritexml had no questions — falling back to JSON API");
-          const jsonResult = parseDebates(debateData);
-          parseResult = {
-            questions: jsonResult.questions,
-            bills: xmlResult.bills.length > 0 ? xmlResult.bills : jsonResult.bills,
-            divisionTimes: xmlResult.divisionTimes.length > 0 ? xmlResult.divisionTimes : jsonResult.divisionTimes,
-          };
-        }
+    if (xmlText) {
+      const xmlResult = parseScrapedXml(xmlText);
+      if (xmlResult.questions.length > 0) {
+        parseResult = xmlResult;
       } else {
-        console.log("  Using JSON API data");
-        parseResult = parseDebates(debateData);
+        // XML had no questions (may have bills) — fall back to JSON API for questions;
+        // merge XML bills in case JSON API misses any.
+        console.warn("  Scraped XML had no questions — falling back to JSON API");
+        debateData ??= await fetchDebates(date, oaType as "representatives" | "senate");
+        const jsonResult = debateData ? parseDebates(debateData) : { bills: [], questions: [], divisionTimes: [] };
+        parseResult = {
+          questions: jsonResult.questions,
+          bills: xmlResult.bills.length > 0 ? xmlResult.bills : jsonResult.bills,
+          divisionTimes: xmlResult.divisionTimes.length > 0 ? xmlResult.divisionTimes : jsonResult.divisionTimes,
+        };
       }
     } else {
-      console.log("  Using JSON API data (XML disabled for HoR — OA rewritexml nesting bug)");
-      parseResult = parseDebates(debateData);
+      console.log("  Using JSON API data");
+      parseResult = parseDebates(debateData!);
     }
     const { bills: rawBills, questions: allQuestions, divisionTimes } = parseResult;
 

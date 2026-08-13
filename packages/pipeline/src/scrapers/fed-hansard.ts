@@ -100,15 +100,23 @@ export async function fetchSpeechRows(
 
 /**
  * Fetch the raw scraped Hansard XML for a given date and chamber.
- * Source: data.openaustralia.org.au/scrapedxml — updated daily, ahead of the JSON API.
+ * Source: data.openaustralia.org.au/scrapedxml — APH's raw Hansard mirror, published
+ * same-day, well ahead of the JSON API (which can lag a sitting day by 24h+ while OA's
+ * own proof→final Hansard publishing catches up).
+ *
+ * NOTE: OA's "rewritexml" mirror (a separate, cleaned-up nested format) used to be the
+ * primary XML source here, but it has been consistently 404 for months across every
+ * date tested — it appears to be dead. scrapedxml is the flat publicwhip/TheyWorkForYou
+ * format instead; see parseScrapedXml in hansard-xml.ts for the parser.
+ *
  * Returns the raw XML string, or null if not found.
  */
-export async function fetchDebatesXml(
+export async function fetchScrapedXml(
   date: string,
   type: "representatives" | "senate"
 ): Promise<string | null> {
   const subdir = type === "senate" ? "senate_debates" : "representatives_debates";
-  const url = `http://data.openaustralia.org.au/rewritexml/${subdir}/${date}.xml`;
+  const url = `https://data.openaustralia.org.au/scrapedxml/${subdir}/${date}.xml`;
 
   let res: Response | null = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -117,13 +125,13 @@ export async function fetchDebatesXml(
       if (res.ok || res.status === 404) break;
     } catch (e) {
       if (attempt === 3) throw e;
-      console.warn(`  OA XML fetch attempt ${attempt} failed, retrying...`);
+      console.warn(`  OA scraped XML fetch attempt ${attempt} failed, retrying...`);
       await new Promise((r) => setTimeout(r, attempt * 3000));
     }
   }
-  if (!res) throw new Error("fetchDebatesXml: all retries failed");
+  if (!res) throw new Error("fetchScrapedXml: all retries failed");
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`fetchDebatesXml error: ${res.status}`);
+  if (!res.ok) throw new Error(`fetchScrapedXml error: ${res.status}`);
   return res.text();
 }
 

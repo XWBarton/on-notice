@@ -2,19 +2,26 @@
  * Parses OpenAustralia debate data to extract bills and questions.
  *
  * Two parsers:
- *  - parseDebatesXml: primary path — parses rewritexml directly (complete, up-to-date,
- *    includes proper <interjection> and <continue> elements per question exchange)
- *  - parseDebates: fallback — parses the OA JSON API response (may lag behind)
+ *  - parseScrapedXml: primary path — parses OA's scrapedxml mirror directly (complete,
+ *    published same-day, includes proper interjection/continuation entries per exchange)
+ *  - parseDebates: fallback — parses the OA JSON API response (may lag a sitting day
+ *    by 24h+ while OA's own proof→final Hansard publishing catches up)
  *
- * Rewritexml structure (per question):
- *   <debate type="QUESTIONS WITHOUT NOTICE">
- *     <subdebate.1>                      ← one per question
- *       <subdebateinfo><title>Topic</title></subdebateinfo>
- *       <speech><talker>...</talker><para>...</para><interjection>...</interjection></speech>
- *       <speech>...</speech>             ← minister response
- *       ...supplementaries...
- *     </subdebate.1>
- *   </debate>
+ * Scrapedxml structure — a flat, document-order list of siblings under <debates>,
+ * not nested per question:
+ *   <debates>
+ *     <major-heading>QUESTIONS WITHOUT NOTICE</major-heading>
+ *     <minor-heading>Topic</minor-heading>            ← one per question
+ *     <speech speakerid=".." speakername=".." talktype="speech" time="HH:MM"><p>..</p></speech>
+ *     <speech talktype="interjection" .../>
+ *     <speech talktype="continuation" .../>            ← same speaker resuming after interruption
+ *     <minor-heading>Next topic</minor-heading>
+ *     ...
+ *     <major-heading>BILLS</major-heading>
+ *     <minor-heading>Bill Title[, Bill Title2]; Stage</minor-heading>
+ *     <bills><bill id="..">Title</bill>...</bills>      ← marker only, title/stage come from the heading
+ *     <division divnumber="1" time="HH:MM" .../>        ← top-level, independent of section
+ *   </debates>
  */
 
 import { XMLParser } from "fast-xml-parser";
@@ -32,7 +39,7 @@ export interface ParsedBill {
 /** A single speech or interjection entry within a Q&A exchange. */
 export interface XmlExchangeEntry {
   type: "speech" | "interjection";
-  /** Raw name from <name role="metadata">, e.g. "Senator GHOSH", "The PRESIDENT" */
+  /** Raw speakername attribute from scrapedxml, e.g. "Penny Ying Yen Wong", "Sue Lines" */
   speakerName: string;
   electorate: string | null;
   text: string;
@@ -49,7 +56,7 @@ export interface ParsedQuestion {
   answerText: string;
   hansardTime: string | null;
   gid: string | null;
-  /** Structured exchange from rewritexml — set only when parsed via parseDebatesXml. */
+  /** Structured exchange from scrapedxml — set only when parsed via parseScrapedXml. */
   exchange?: XmlExchangeEntry[];
 }
 
@@ -77,7 +84,7 @@ export interface ParsedDivisionTime {
   htime: string; // e.g. "14:32:00"
 }
 
-// ── Rewritexml parser (primary) ───────────────────────────────────────────────
+// ── Scraped XML parser (primary) ────────────────────────────────────────────────
 
 type XmlChild = Record<string, unknown>;
 
@@ -97,148 +104,40 @@ function xmlText(nodes: XmlChild[]): string {
     .trim();
 }
 
-/** Return children of first node whose tag matches, or null. */
-function firstChildOf(nodes: XmlChild[], tag: string): XmlChild[] | null {
-  const node = nodes.find((n) => Array.isArray(n[tag]));
-  return node ? (node[tag] as XmlChild[]) : null;
-}
-
-/** Return all nodes in array whose tag matches. */
-function allChildrenOf(nodes: XmlChild[], tag: string): XmlChild[][] {
-  return nodes
-    .filter((n) => Array.isArray(n[tag]))
-    .map((n) => n[tag] as XmlChild[]);
-}
-
-/**
- * Extract speaker name from a <talker> node.
- * Looks for <name role="metadata">.
- */
-function talkerName(talkerChildren: XmlChild[]): string | null {
-  for (const child of talkerChildren) {
-    if (!Array.isArray(child["name"])) continue;
-    const attrs = (child[":@"] ?? {}) as Record<string, string>;
-    if (attrs["@_role"] === "metadata") {
-      return xmlText(child["name"] as XmlChild[]) || null;
-    }
-  }
-  return null;
-}
-
-/** Extract text from <para> elements that are direct children (not inside interjection/continue). */
-function directParaText(speechChildren: XmlChild[]): string {
+/** Extract text from <p> elements that are direct children of a <speech>. */
+function speechText(speechChildren: XmlChild[]): string {
   return speechChildren
-    .filter((n) => Array.isArray(n["para"]))
-    .map((n) => xmlText(n["para"] as XmlChild[]))
+    .filter((n) => Array.isArray(n["p"]))
+    .map((n) => xmlText(n["p"] as XmlChild[]))
     .filter(Boolean)
     .join("\n\n");
 }
 
-/**
- * Parse one <subdebate.1> worth of children into an ordered exchange of
- * speeches and interjections. Also returns top-level metadata.
- */
-function parseSubdebateExchange(subdebate1Children: XmlChild[]): {
+/** Split a bill minor-heading "Title[, Title2]; Stage" into (titles, stage). */
+function splitBillHeading(heading: string): { titlesPart: string; stagePart: string | null } {
+  const idx = heading.lastIndexOf(";");
+  if (idx === -1) return { titlesPart: heading, stagePart: null };
+  return { titlesPart: heading.slice(0, idx).trim(), stagePart: heading.slice(idx + 1).trim() };
+}
+
+interface InProgressQuestion {
   subject: string | null;
+  exchange: XmlExchangeEntry[];
   askerName: string | null;
   ministerName: string | null;
   hansardTime: string | null;
-  questionText: string;
-  answerText: string;
-  exchange: XmlExchangeEntry[];
-} | null {
-  // Topic from <subdebateinfo><title>
-  const infoChildren = firstChildOf(subdebate1Children, "subdebateinfo");
-  const subject = infoChildren
-    ? xmlText(firstChildOf(infoChildren, "title") ?? []) || null
-    : null;
-
-  const exchange: XmlExchangeEntry[] = [];
-  let askerName: string | null = null;
-  let ministerName: string | null = null;
-  let hansardTime: string | null = null;
-
-  for (const node of subdebate1Children) {
-    if (!Array.isArray(node["speech"])) continue;
-    const speechChildren = node["speech"] as XmlChild[];
-
-    const talkerChildren = firstChildOf(speechChildren, "talker");
-    if (!talkerChildren) continue;
-    const speaker = talkerName(talkerChildren);
-    if (!speaker) continue;
-
-    const electorate = xmlText(firstChildOf(talkerChildren, "electorate") ?? []) || null;
-    const time = xmlText(firstChildOf(talkerChildren, "time.stamp") ?? []) || null;
-
-    // Set asker/minister from first two distinct speakers
-    if (askerName === null) {
-      askerName = speaker;
-      hansardTime = time;
-    } else if (ministerName === null && speaker !== askerName) {
-      ministerName = speaker;
-    }
-
-    // Main speech paragraphs (direct <para> children only)
-    const mainText = directParaText(speechChildren);
-    if (mainText) {
-      exchange.push({ type: "speech", speakerName: speaker, electorate, text: mainText });
-    }
-
-    // Walk children for interjections and continuations
-    for (const child of speechChildren) {
-      if (Array.isArray(child["interjection"])) {
-        const interjChildren = child["interjection"] as XmlChild[];
-        const interjTalker = firstChildOf(interjChildren, "talker");
-        const interjSpeaker = interjTalker ? talkerName(interjTalker) : null;
-        const interjText = directParaText(interjChildren);
-        if (interjSpeaker && interjText) {
-          exchange.push({ type: "interjection", speakerName: interjSpeaker, electorate: null, text: interjText });
-        }
-      }
-
-      if (Array.isArray(child["continue"])) {
-        const contChildren = child["continue"] as XmlChild[];
-        const contText = directParaText(contChildren);
-        if (contText) {
-          // Append to the last speech entry for this speaker, or create new
-          const last = exchange[exchange.length - 1];
-          if (last && last.type === "speech" && last.speakerName === speaker) {
-            last.text += "\n\n" + contText;
-          } else {
-            exchange.push({ type: "speech", speakerName: speaker, electorate, text: contText });
-          }
-        }
-      }
-    }
-  }
-
-  if (!askerName) return null;
-
-  const questionText = exchange
-    .filter((e) => e.type === "speech" && e.speakerName === askerName)
-    .map((e) => e.text)
-    .join("\n\n");
-
-  const answerText = exchange
-    .filter((e) => e.type === "speech" && ministerName && e.speakerName === ministerName)
-    .map((e) => e.text)
-    .join("\n\n");
-
-  return { subject, askerName, ministerName, hansardTime, questionText, answerText, exchange };
 }
 
 /**
- * Parse a rewritexml string into bills, questions, and division times.
- * Structure: <hansard><chamber.xscript><debate>...</debate>...</chamber.xscript></hansard>
+ * Parse OA's scrapedxml mirror into bills, questions, and division times.
+ * Structure: flat <debates> with major-heading/minor-heading/speech/bills/division
+ * siblings in document order — see file header comment for details.
  */
-export function parseDebatesXml(xmlText_: string): {
+export function parseScrapedXml(xmlText_: string): {
   bills: ParsedBill[];
   questions: ParsedQuestion[];
   divisionTimes: ParsedDivisionTime[];
 } {
-  // Strip scrapedxml <para> tags that occasionally appear unescaped in rewritexml speech text
-  xmlText_ = xmlText_.replace(/<\/?para>/gi, "");
-
   let parsed: XmlChild[];
   try {
     const parser = new XMLParser({
@@ -247,124 +146,158 @@ export function parseDebatesXml(xmlText_: string): {
       attributeNamePrefix: "@_",
       parseAttributeValue: false,
       maxNestedTags: 2000,
+      // Hansard text is full of &apos;/&#8217; etc. — the default 1000-expansion
+      // safety limit (meant to guard against entity-bomb attacks) trips on a normal
+      // sitting day's worth of contractions well before the document ends.
+      processEntities: { maxTotalExpansions: 200_000 },
     });
     parsed = parser.parse(xmlText_) as XmlChild[];
   } catch (e) {
-    console.warn(`  Rewritexml parse error: ${e}`);
+    console.warn(`  Scraped XML parse error: ${e}`);
     return { bills: [], questions: [], divisionTimes: [] };
   }
 
-  // Navigate: root → <hansard> → <chamber.xscript>
-  const hansardEl = parsed.find((n) => Array.isArray(n["hansard"]));
-  if (!hansardEl) return { bills: [], questions: [], divisionTimes: [] };
-
-  const hansardChildren = hansardEl["hansard"] as XmlChild[];
-  const xscriptEl = hansardChildren.find((n) => Array.isArray(n["chamber.xscript"]));
-  if (!xscriptEl) return { bills: [], questions: [], divisionTimes: [] };
-
-  const xscriptChildren = xscriptEl["chamber.xscript"] as XmlChild[];
+  const debatesEl = parsed.find((n) => Array.isArray(n["debates"]));
+  if (!debatesEl) return { bills: [], questions: [], divisionTimes: [] };
+  const nodes = debatesEl["debates"] as XmlChild[];
 
   const bills: ParsedBill[] = [];
   const questions: ParsedQuestion[] = [];
   const divisionTimes: ParsedDivisionTime[] = [];
   let divisionCounter = 0;
 
-  // Iterate all <debate> elements
-  for (const node of xscriptChildren) {
-    if (!Array.isArray(node["debate"])) continue;
-    const debateChildren = node["debate"] as XmlChild[];
+  type Section = "QWN" | "BILLS" | "OTHER";
+  let section: Section = "OTHER";
+  let currentQuestion: InProgressQuestion | null = null;
+  let pendingBillHeading: string | null = null;
 
-    const infoChildren = firstChildOf(debateChildren, "debateinfo");
-    if (!infoChildren) continue;
+  const flushQuestion = () => {
+    if (!currentQuestion || !currentQuestion.askerName) {
+      currentQuestion = null;
+      return;
+    }
+    const { subject, exchange, askerName, ministerName, hansardTime } = currentQuestion;
+    const questionText = exchange
+      .filter((e) => e.type === "speech" && e.speakerName === askerName)
+      .map((e) => e.text)
+      .join("\n\n");
+    const answerText = exchange
+      .filter((e) => e.type === "speech" && ministerName && e.speakerName === ministerName)
+      .map((e) => e.text)
+      .join("\n\n");
+    questions.push({
+      questionNumber: questions.length + 1,
+      askerName,
+      askerParty: null,
+      ministerName,
+      ministerParty: null,
+      subject,
+      questionText,
+      answerText,
+      hansardTime,
+      gid: null, // scrapedxml has no OA-style GIDs
+      exchange,
+    });
+    currentQuestion = null;
+  };
 
-    const debateType = xmlText(firstChildOf(infoChildren, "type") ?? []).toUpperCase();
-    const debateTitle = xmlText(firstChildOf(infoChildren, "title") ?? []).toUpperCase();
+  for (const node of nodes) {
+    const attrs = (node[":@"] ?? {}) as Record<string, string>;
 
-    // ── Questions Without Notice ──────────────────────────────────────────────
-    if (debateType.includes("QUESTIONS WITHOUT NOTICE") && !debateType.includes("TAKE NOTE")) {
-      console.log(`  → XML: Found question time`);
-      for (const subdebate1Node of debateChildren) {
-        if (!Array.isArray(subdebate1Node["subdebate.1"])) continue;
-        const subdebate1Children = subdebate1Node["subdebate.1"] as XmlChild[];
-
-        const result = parseSubdebateExchange(subdebate1Children);
-        if (!result) continue;
-
-        questions.push({
-          questionNumber: questions.length + 1,
-          askerName: result.askerName,
-          askerParty: null,
-          ministerName: result.ministerName,
-          ministerParty: null,
-          subject: result.subject,
-          questionText: result.questionText,
-          answerText: result.answerText,
-          hansardTime: result.hansardTime,
-          gid: null, // rewritexml has no OA-style GIDs
-          exchange: result.exchange,
-        });
+    // ── Section headers ────────────────────────────────────────────────────────
+    if (Array.isArray(node["major-heading"])) {
+      if (section === "QWN") flushQuestion();
+      const heading = xmlText(node["major-heading"] as XmlChild[]).toUpperCase();
+      if (heading.includes("QUESTIONS WITHOUT NOTICE") && !heading.includes("TAKE NOTE")) {
+        section = "QWN";
+        console.log(`  → XML: Found question time`);
+      } else if (heading === "BILLS") {
+        section = "BILLS";
+      } else {
+        section = "OTHER";
       }
+      pendingBillHeading = null;
+      continue;
     }
 
-    // ── Bills ─────────────────────────────────────────────────────────────────
-    if (debateTitle === "BILLS" || debateType === "BILLS") {
-      for (const sub1Node of debateChildren) {
-        if (!Array.isArray(sub1Node["subdebate.1"])) continue;
-        const sub1Children = sub1Node["subdebate.1"] as XmlChild[];
+    if (Array.isArray(node["minor-heading"])) {
+      const heading = xmlText(node["minor-heading"] as XmlChild[]);
+      if (section === "QWN") {
+        flushQuestion();
+        currentQuestion = { subject: heading || null, exchange: [], askerName: null, ministerName: null, hansardTime: null };
+      } else if (section === "BILLS") {
+        pendingBillHeading = heading || null;
+      }
+      continue;
+    }
 
-        const sub1Info = firstChildOf(sub1Children, "subdebateinfo");
-        const billTitle = sub1Info
-          ? xmlText(firstChildOf(sub1Info, "title") ?? [])
-          : "";
-        if (!billTitle) continue;
-
-        // Reading stage from <subdebate.2>
-        for (const sub2Node of sub1Children) {
-          if (!Array.isArray(sub2Node["subdebate.2"])) continue;
-          const sub2Children = sub2Node["subdebate.2"] as XmlChild[];
-          const sub2Info = firstChildOf(sub2Children, "subdebateinfo");
-          const stageName = sub2Info
-            ? xmlText(firstChildOf(sub2Info, "title") ?? [])
-            : "";
-
-          if (!stageName) continue;
-          const combined = `${billTitle} — ${stageName}`;
+    // ── Bills — title(s) + stage come from the preceding minor-heading ─────────
+    if (Array.isArray(node["bills"])) {
+      if (section === "BILLS" && pendingBillHeading) {
+        const { titlesPart, stagePart } = splitBillHeading(pendingBillHeading);
+        const stage = inferStage(stagePart ?? pendingBillHeading);
+        for (const title of titlesPart.split(",").map((t) => t.trim()).filter(Boolean)) {
           bills.push({
-            shortTitle: billTitle,
+            shortTitle: title,
             longTitle: null,
             introducerName: null,
-            stage: inferStage(stageName),
+            stage,
             hansardRef: null,
             introductionText: null,
           });
-          void combined; // used for inferStage
         }
       }
+      pendingBillHeading = null;
+      continue;
     }
 
-    // ── Division timestamps ───────────────────────────────────────────────────
-    // Rewritexml encodes division time in "The Senate divided. [HH:MM]" text
-    for (const sub1Node of debateChildren) {
-      if (!Array.isArray(sub1Node["subdebate.1"])) continue;
-      const sub1Children = sub1Node["subdebate.1"] as XmlChild[];
+    // ── Divisions — top-level, independent of section ──────────────────────────
+    if (Array.isArray(node["division"])) {
+      const time = attrs["@_time"];
+      if (time) {
+        divisionCounter++;
+        divisionTimes.push({ divisionNumber: divisionCounter, htime: `${time}:00` });
+      }
+      continue;
+    }
 
-      for (const child of sub1Children) {
-        if (!Array.isArray(child["division"])) continue;
-        const divChildren = child["division"] as XmlChild[];
-        const headerEl = firstChildOf(divChildren, "division.header");
-        if (!headerEl) continue;
-        const headerText = xmlText(headerEl);
-        const timeMatch = headerText.match(/\[(\d{1,2}:\d{2})\]/);
-        if (timeMatch) {
-          divisionCounter++;
-          divisionTimes.push({
-            divisionNumber: divisionCounter,
-            htime: timeMatch[1] + ":00",
-          });
+    // ── Question time speeches ───────────────────────────────────────────────
+    if (Array.isArray(node["speech"]) && section === "QWN" && currentQuestion) {
+      const speechChildren = node["speech"] as XmlChild[];
+      const speaker = attrs["@_speakername"];
+      const talktype = attrs["@_talktype"];
+      const time = attrs["@_time"];
+      if (!speaker) continue;
+
+      const text = speechText(speechChildren);
+      if (!text) continue;
+
+      if (talktype === "interjection") {
+        currentQuestion.exchange.push({ type: "interjection", speakerName: speaker, electorate: null, text });
+        continue;
+      }
+
+      if (talktype === "continuation") {
+        const last = currentQuestion.exchange[currentQuestion.exchange.length - 1];
+        if (last && last.type === "speech" && last.speakerName === speaker) {
+          last.text += "\n\n" + text;
+        } else {
+          currentQuestion.exchange.push({ type: "speech", speakerName: speaker, electorate: null, text });
         }
+        continue;
+      }
+
+      // Normal speech — set asker/minister from the first two distinct speakers
+      currentQuestion.exchange.push({ type: "speech", speakerName: speaker, electorate: null, text });
+      if (currentQuestion.askerName === null) {
+        currentQuestion.askerName = speaker;
+        currentQuestion.hansardTime = time ? `${time}:00` : null;
+      } else if (currentQuestion.ministerName === null && speaker !== currentQuestion.askerName) {
+        currentQuestion.ministerName = speaker;
       }
     }
   }
+  if (section === "QWN") flushQuestion();
 
   console.log(`  XML: ${questions.length} questions, ${bills.length} bills, ${divisionTimes.length} divisions`);
   return { bills, questions, divisionTimes };

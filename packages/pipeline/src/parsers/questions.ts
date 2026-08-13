@@ -43,21 +43,21 @@ export function resetMemberCache() {
 }
 
 /**
- * Parse a raw rewritexml speaker name into first/last name components.
- * "Senator CASH"          → { firstName: null,     lastName: "CASH" }
- * "Senator BARBARA POCOCK" → { firstName: "BARBARA", lastName: "POCOCK" }
- * "The PRESIDENT"         → { firstName: null,     lastName: "PRESIDENT" }
+ * Parse a raw scrapedxml speakername attribute into first/last name components.
+ * "Angus Taylor"           → { firstName: "Angus",   lastName: "Taylor" }
+ * "Penny Ying Yen Wong"    → { firstName: "Penny Ying Yen", lastName: "Wong" }
+ * "The ACTING DEPUTY PRESIDENT" → { firstName: "ACTING DEPUTY", lastName: "PRESIDENT" }
  */
 function parseXmlSpeakerName(raw: string): { firstName: string | null; lastName: string } {
-  const withoutTitle = raw.replace(/^(Senator|The|Member)\s+/i, "").trim();
+  const withoutTitle = raw.replace(/^(Senator|The|Member|Mr|Mrs|Ms|Dr)\s+/i, "").trim();
   const parts = withoutTitle.split(/\s+/);
   if (parts.length <= 1) return { firstName: null, lastName: parts[0] ?? raw };
   return { firstName: parts.slice(0, -1).join(" "), lastName: parts[parts.length - 1] };
 }
 
 /**
- * Returns a lookup function that resolves raw rewritexml speaker names
- * (e.g. "Senator BARBARA POCOCK") to party short_name and display name.
+ * Returns a lookup function that resolves raw scrapedxml speaker names
+ * (e.g. "Penny Ying Yen Wong") to party short_name and display name.
  * Uses a fresh DB query so party short_names come from the parties table directly.
  */
 export async function getMemberLookup(parliamentId: string): Promise<
