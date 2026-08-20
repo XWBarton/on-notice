@@ -347,6 +347,23 @@ ts-node src/index.ts \
 1. Puppeteer + Podbean fetch + YouTube captions fetch + Claude calls = ~5-10 min for audio pipeline
 2. All AI summarization is sequential (rate limit avoidance) = ~30-60 sec per day
 
+### OA Senate outage (ongoing as of Aug 20, 2026)
+Confirmed via live diagnostic dispatch (not a code bug — verified both fetch paths directly):
+- `fetchScrapedXml(date, "senate")` → `data.openaustralia.org.au/scrapedxml/senate_debates/{date}.xml`
+  returns 404 for every Senate sitting day from ~Aug 10 onward.
+- `fetchDebates(date, "senate")` (JSON API) returns HTTP 200 with `{"error":"No data to display"}`
+  for the same dates.
+- The exact same code paths, same URL scheme, work fine for `representatives` on the same dates,
+  and worked for `senate` on older dates (e.g. 2026-07-02 scrapedxml → HTTP 200, full pipeline
+  succeeded) — ruling out a URL/param bug on our side.
+- Conclusion: OA has stopped publishing/indexing Senate Hansard specifically (both mirrors) since
+  ~Aug 10, 2026, while House publishing is unaffected. Nothing to fix in this codebase — the
+  4-day catch-up loop plus the Senate evening retry cron will pick it up automatically once OA
+  resumes. Diagnostic logging (`[diag] ...` lines in fetchDebates/fetchScrapedXml) was added to
+  fed-hansard.ts to make this visible in run logs without needing to re-derive it — if the
+  outage is still going, check the latest fed_sen job log for the same `[diag] ... → HTTP 404`
+  / `{"error":"No data to display"}` pattern before assuming a regression.
+
 ---
 
 ## Testing & Debugging
