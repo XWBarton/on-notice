@@ -104,16 +104,6 @@ async function run() {
   if (!xmlText) {
     debateData = await fetchDebates(date, oaType as "representatives" | "senate");
     if (!debateData) {
-      // ONE-OFF diagnostic: is APH's own daily Hansard page directly reachable from this
-      // runner, independent of OA? (checking whether OA's outage is bypassable, and whether
-      // the documented Azure WAF block still holds). Remove after use.
-      const aphUrl = `https://hansard.aph.gov.au/hansard/daily/${config.chamber === "lower" ? "Representatives" : "Senate"}/${date}/`;
-      try {
-        const aphRes = await fetch(aphUrl, { signal: AbortSignal.timeout(20_000) });
-        console.log(`  [diag] direct APH fetch ${aphUrl} → HTTP ${aphRes.status}`);
-      } catch (e) {
-        console.log(`  [diag] direct APH fetch ${aphUrl} → threw: ${(e as Error).message}`);
-      }
       console.log(`No debates found for ${date} — parliament likely not sitting. Exiting.`);
       return;
     }

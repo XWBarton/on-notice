@@ -363,6 +363,14 @@ Confirmed via live diagnostic dispatch (not a code bug — verified both fetch p
   fed-hansard.ts to make this visible in run logs without needing to re-derive it — if the
   outage is still going, check the latest fed_sen job log for the same `[diag] ... → HTTP 404`
   / `{"error":"No data to display"}` pattern before assuming a regression.
+- **Is there a non-OA fallback?** Tested live: `fetch()` to `hansard.aph.gov.au/hansard/daily/...`
+  directly from a GitHub Actions runner throws outright ("fetch failed") — the connection itself
+  is refused before any HTTP response, consistent with the documented Azure WAF block on
+  automated APH access (same class of block that took out the WA pipeline's runner access).
+  There is no independent text-Hansard source practical to scrape from this environment; OA is
+  the only viable source for bills/questions/divisions content. The outage can't be routed
+  around — only made less painful (wider catch-up window, and/or alerting when a chamber has
+  been stuck failing for N days, since currently a stuck chamber just retries silently forever).
 
 ---
 
