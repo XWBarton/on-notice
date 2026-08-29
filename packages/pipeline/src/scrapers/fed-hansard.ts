@@ -50,12 +50,14 @@ export async function fetchDebates(
     }
   }
   if (!res) throw new Error("OpenAustralia getDebates: all retries failed");
+  console.log(`  [diag] getDebates type=${type} date=${date} → HTTP ${res.status}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`OpenAustralia getDebates error: ${res.status}`);
 
   const raw = await res.json();
   // API returns array of debate sections, or error object
   if (!Array.isArray(raw)) {
+    console.log(`  [diag] getDebates raw response: ${JSON.stringify(raw).slice(0, 500)}`);
     const err = (raw as Record<string, unknown>).error;
     if (err) console.log(`OpenAustralia debates error: ${err}`);
     return null;
@@ -130,6 +132,7 @@ export async function fetchScrapedXml(
     }
   }
   if (!res) throw new Error("fetchScrapedXml: all retries failed");
+  console.log(`  [diag] scrapedxml ${url} → HTTP ${res.status}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`fetchScrapedXml error: ${res.status}`);
   return res.text();
