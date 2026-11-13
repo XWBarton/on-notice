@@ -61,7 +61,8 @@ jobs:
   # ── Federal pipeline (House + Senate) ──────────────────────────────────────
   federal:
     name: ${{ matrix.parliament }}
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is now 26.04, which the pinned Playwright can't install on.
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     if: github.event_name == 'schedule' || startsWith(github.event.inputs.parliament, 'fed_')
     strategy:
