@@ -11,7 +11,9 @@
  * not nested per question:
  *   <debates>
  *     <major-heading>QUESTIONS WITHOUT NOTICE</major-heading>
- *     <minor-heading>Topic</minor-heading>            ← one per question
+ *     <minor-heading>Topic</minor-heading>            ← usually one per question, but
+ *                                                       consecutive questions on the same
+ *                                                       topic share a single heading
  *     <speech speakerid=".." speakername=".." talktype="speech" time="HH:MM"><p>..</p></speech>
  *     <speech talktype="interjection" .../>
  *     <speech talktype="continuation" .../>            ← same speaker resuming after interruption
@@ -88,18 +90,43 @@ export interface ParsedDivisionTime {
 
 type XmlChild = Record<string, unknown>;
 
+const NAMED_ENTITIES: Record<string, string> = {
+  apos: "'", quot: '"', lt: "<", gt: ">", nbsp: " ", ndash: "–", mdash: "—",
+  lsquo: "\u2018", rsquo: "\u2019", ldquo: "\u201c", rdquo: "\u201d", hellip: "…",
+};
+
+/**
+ * Decode entities the XML parser leaves behind. OA's scrapedxml switched from literal
+ * characters to numeric references (&#x2014; &#xA0;) in Sept 2026, which fast-xml-parser
+ * passes through untouched — without this they end up verbatim in the stored text.
+ */
+export function decodeEntities(text: string): string {
+  return text
+    .replace(/&#x([0-9a-f]+);/gi, (m, hex) => safeCodePoint(parseInt(hex, 16), m))
+    .replace(/&#(\d+);/g, (m, dec) => safeCodePoint(parseInt(dec, 10), m))
+    .replace(/&([a-z]+);/gi, (m, name) => NAMED_ENTITIES[name.toLowerCase()] ?? m)
+    .replace(/&amp;/g, "&")
+    .replace(/\u00a0/g, " ");
+}
+
+function safeCodePoint(code: number, fallback: string): string {
+  return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : fallback;
+}
+
 /** Recursively extract plain text from fast-xml-parser preserveOrder nodes. */
 function xmlText(nodes: XmlChild[]): string {
-  return nodes
-    .flatMap((node): string[] => {
-      if (typeof node["#text"] === "string") return [node["#text"]];
-      for (const [key, val] of Object.entries(node)) {
-        if (key === ":@") continue;
-        if (Array.isArray(val)) return [xmlText(val as XmlChild[])];
-      }
-      return [];
-    })
-    .join(" ")
+  return decodeEntities(
+    nodes
+      .flatMap((node): string[] => {
+        if (typeof node["#text"] === "string") return [node["#text"]];
+        for (const [key, val] of Object.entries(node)) {
+          if (key === ":@") continue;
+          if (Array.isArray(val)) return [xmlText(val as XmlChild[])];
+        }
+        return [];
+      })
+      .join(" ")
+  )
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -110,8 +137,54 @@ function speechText(speechChildren: XmlChild[]): string {
     .filter((n) => Array.isArray(n["p"]))
     .map((n) => xmlText(n["p"] as XmlChild[]))
     .filter(Boolean)
-    .join("\n\n");
+    .join("\n\n")
+    // OA leaves an empty "():" where APH prints the member's electorate/time prefix
+    .replace(/^\(\s*\)\s*:?\s*/, "");
 }
+
+// ── Question-time speaker classification ────────────────────────────────────────
+
+const QWN_HEADING_RE = /^QUESTIONS WITHOUT NOTICE(?!\s*:)/;
+
+/**
+ * True only for the question-time section itself. "QUESTIONS WITHOUT NOTICE: TAKE NOTE
+ * OF ANSWERS" and "QUESTIONS WITHOUT NOTICE: ADDITIONAL ANSWERS" are ministers and
+ * senators speaking after question time — treating them as questions produced phantom
+ * entries where the "asker" was a minister.
+ */
+function isQuestionTimeHeading(heading: string): boolean {
+  return QWN_HEADING_RE.test(heading.trim().toUpperCase());
+}
+
+/** "Opposition Members", "Hon. Members", "Government Senators", "An opposition member" */
+function isGroupSpeaker(name: string, speakerId: string | undefined): boolean {
+  if (!speakerId || speakerId === "unknown") return true;
+  return /\b(members?|senators?)$/i.test(name.trim());
+}
+
+/**
+ * A new primary question, as opposed to a minister's answer or a second minister adding
+ * to one. Used to split consecutive questions that Hansard files under one topic heading.
+ */
+function looksLikeNewQuestion(text: string): boolean {
+  const head = text.slice(0, 300);
+  if (STRONG_QUESTION_RE.test(head.slice(0, 200))) return true;
+  if (ADDRESSED_TO_RE.test(head)) return true;
+  // Ministers open with "I thank the member for her question" — never a new question.
+  if (/\bthanks?\b.{0,80}\bquestion\b/i.test(head)) return false;
+  // Unaddressed crossbench-style question ("Last week the 45th woman was killed… will the
+  // government act?"). Questions are capped at ~45 seconds, so a long speech that merely
+  // ends on a rhetorical question is an answer, not a question.
+  return /\?["'\u2019\u201d]?\s*$/.test(text) && text.split(/\s+/).length <= 200;
+}
+
+// "My question is to…", "My question is also for…", "I've got another question for…".
+// Deliberately requires the first-person form: ministers say things like "I think this
+// question is for the Minister for X", which must not read as a new question.
+const STRONG_QUESTION_RE =
+  /\bmy question\b[^.?!]{0,40}\b(?:to|for)\b|\bI(?:'ve| have)? (?:got )?(?:a|another) question (?:to|for)\b/i;
+const ADDRESSED_TO_RE =
+  /^\W*(?:(?:to|for) the (?:prime minister|deputy prime minister|treasurer|attorney-general|minister|assistant minister|leader)\b|(?:prime minister|deputy prime minister|treasurer|attorney-general|minister)\s*[,:])/i;
 
 /** Split a bill minor-heading "Title[, Title2]; Stage" into (titles, stage). */
 function splitBillHeading(heading: string): { titlesPart: string; stagePart: string | null } {
@@ -126,6 +199,35 @@ interface InProgressQuestion {
   askerName: string | null;
   ministerName: string | null;
   hansardTime: string | null;
+}
+
+/**
+ * Identify who was in the chair during question time: the speaker with by far the most
+ * interjection-type entries inside the QWN sections (every point of order, call and
+ * "Order!" is theirs). scrapedxml carries no role attribute, so this is inferred per day.
+ */
+function findPresidingOfficers(nodes: XmlChild[]): Set<string | undefined> {
+  const counts = new Map<string, number>();
+  let inQwn = false;
+  for (const node of nodes) {
+    if (Array.isArray(node["major-heading"])) {
+      inQwn = isQuestionTimeHeading(xmlText(node["major-heading"] as XmlChild[]));
+      continue;
+    }
+    if (!inQwn || !Array.isArray(node["speech"])) continue;
+    const attrs = (node[":@"] ?? {}) as Record<string, string>;
+    const id = attrs["@_speakerid"];
+    const name = attrs["@_speakername"] ?? "";
+    if (attrs["@_talktype"] !== "interjection" || isGroupSpeaker(name, id)) continue;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const presiding = new Set<string | undefined>();
+  // Needs a clear lead — on a quiet day with no obvious chair, exclude no one.
+  if (ranked.length > 0 && ranked[0][1] >= 3 && ranked[0][1] > (ranked[1]?.[1] ?? 0)) {
+    presiding.add(ranked[0][0]);
+  }
+  return presiding;
 }
 
 /**
@@ -169,14 +271,38 @@ export function parseScrapedXml(xmlText_: string): {
   type Section = "QWN" | "BILLS" | "OTHER";
   let section: Section = "OTHER";
   let currentQuestion: InProgressQuestion | null = null;
+  let currentTopic: string | null = null;
   let pendingBillHeading: string | null = null;
+
+  const presidingIds = findPresidingOfficers(nodes);
+
+  const newQuestion = (): InProgressQuestion => ({
+    subject: currentTopic,
+    exchange: [],
+    askerName: null,
+    ministerName: null,
+    hansardTime: null,
+  });
 
   const flushQuestion = () => {
     if (!currentQuestion || !currentQuestion.askerName) {
       currentQuestion = null;
       return;
     }
-    const { subject, exchange, askerName, ministerName, hansardTime } = currentQuestion;
+    const { subject, exchange, askerName, hansardTime } = currentQuestion;
+    // The answering minister is whoever (other than the asker) said the most — not simply
+    // the first to stand, which is often someone taking a point of order before the answer.
+    const spoken = new Map<string, number>();
+    for (const e of exchange) {
+      if (e.type !== "speech" || e.speakerName === askerName) continue;
+      spoken.set(e.speakerName, (spoken.get(e.speakerName) ?? 0) + e.text.length);
+    }
+    const mostSpoken = [...spoken.entries()].sort((a, b) => b[1] - a[1])[0];
+    const firstResponder = currentQuestion.ministerName;
+    const ministerName =
+      firstResponder && mostSpoken && mostSpoken[1] <= (spoken.get(firstResponder) ?? 0) * 1.5
+        ? firstResponder
+        : mostSpoken?.[0] ?? firstResponder;
     const questionText = exchange
       .filter((e) => e.type === "speech" && e.speakerName === askerName)
       .map((e) => e.text)
@@ -208,7 +334,9 @@ export function parseScrapedXml(xmlText_: string): {
     if (Array.isArray(node["major-heading"])) {
       if (section === "QWN") flushQuestion();
       const heading = xmlText(node["major-heading"] as XmlChild[]).toUpperCase();
-      if (heading.includes("QUESTIONS WITHOUT NOTICE") && !heading.includes("TAKE NOTE")) {
+      if (isQuestionTimeHeading(heading)) {
+        // Question time is often split into several QWN blocks by interruptions
+        // (DISTINGUISHED VISITORS etc.) — each block continues the same numbering.
         section = "QWN";
         console.log(`  → XML: Found question time`);
       } else if (heading === "BILLS") {
@@ -216,6 +344,7 @@ export function parseScrapedXml(xmlText_: string): {
       } else {
         section = "OTHER";
       }
+      currentTopic = null;
       pendingBillHeading = null;
       continue;
     }
@@ -224,7 +353,8 @@ export function parseScrapedXml(xmlText_: string): {
       const heading = xmlText(node["minor-heading"] as XmlChild[]);
       if (section === "QWN") {
         flushQuestion();
-        currentQuestion = { subject: heading || null, exchange: [], askerName: null, ministerName: null, hansardTime: null };
+        currentTopic = heading || null;
+        currentQuestion = newQuestion();
       } else if (section === "BILLS") {
         pendingBillHeading = heading || null;
       }
@@ -262,9 +392,10 @@ export function parseScrapedXml(xmlText_: string): {
     }
 
     // ── Question time speeches ───────────────────────────────────────────────
-    if (Array.isArray(node["speech"]) && section === "QWN" && currentQuestion) {
+    if (Array.isArray(node["speech"]) && section === "QWN") {
       const speechChildren = node["speech"] as XmlChild[];
       const speaker = attrs["@_speakername"];
+      const speakerId = attrs["@_speakerid"];
       const talktype = attrs["@_talktype"];
       const time = attrs["@_time"];
       if (!speaker) continue;
@@ -272,29 +403,53 @@ export function parseScrapedXml(xmlText_: string): {
       const text = speechText(speechChildren);
       if (!text) continue;
 
-      if (talktype === "interjection") {
-        currentQuestion.exchange.push({ type: "interjection", speakerName: speaker, electorate: null, text });
+      // Speeches before any topic heading still belong to a question.
+      currentQuestion ??= newQuestion();
+      const q: InProgressQuestion = currentQuestion;
+
+      // The chair and crowd noise never ask or answer — OA sometimes tags them
+      // talktype="speech" (e.g. "I give the call to the member for…"), which used to
+      // make the Speaker the asker or "Government Members" the answering minister.
+      if (talktype === "interjection" || isGroupSpeaker(speaker, speakerId) || presidingIds.has(speakerId)) {
+        q.exchange.push({ type: "interjection", speakerName: speaker, electorate: null, text });
         continue;
       }
 
-      if (talktype === "continuation") {
-        const last = currentQuestion.exchange[currentQuestion.exchange.length - 1];
+      // A continuation only continues if the same speaker already has the floor in this
+      // question; otherwise treat it as a fresh speech (falls through below).
+      if (talktype === "continuation" && (speaker === q.askerName || speaker === q.ministerName)) {
+        const last = q.exchange[q.exchange.length - 1];
         if (last && last.type === "speech" && last.speakerName === speaker) {
           last.text += "\n\n" + text;
         } else {
-          currentQuestion.exchange.push({ type: "speech", speakerName: speaker, electorate: null, text });
+          q.exchange.push({ type: "speech", speakerName: speaker, electorate: null, text });
         }
         continue;
       }
 
-      // Normal speech — set asker/minister from the first two distinct speakers
-      currentQuestion.exchange.push({ type: "speech", speakerName: speaker, electorate: null, text });
-      if (currentQuestion.askerName === null) {
-        currentQuestion.askerName = speaker;
-        currentQuestion.hansardTime = time ? `${time}:00` : null;
-      } else if (currentQuestion.ministerName === null && speaker !== currentQuestion.askerName) {
-        currentQuestion.ministerName = speaker;
+      if (q.askerName === null) {
+        q.askerName = speaker;
+        q.hansardTime = time ? `${time}:00` : null;
+      } else if (speaker !== q.askerName && speaker !== q.ministerName) {
+        // A third voice. Hansard files consecutive questions on the same topic under one
+        // heading, so this is either the next question or (rarely) a second minister
+        // adding to the answer. Before any answer has been given only an unmistakable
+        // "My question is to…" starts a new question — otherwise it's the minister.
+        const startsNewQuestion = q.ministerName === null
+          ? STRONG_QUESTION_RE.test(text.slice(0, 200)) && !/^\W*(?:I )?thank/i.test(text)
+          : looksLikeNewQuestion(text);
+        if (startsNewQuestion) {
+          flushQuestion();
+          const next = newQuestion();
+          next.askerName = speaker;
+          next.hansardTime = time ? `${time}:00` : null;
+          next.exchange.push({ type: "speech", speakerName: speaker, electorate: null, text });
+          currentQuestion = next;
+          continue;
+        }
+        if (q.ministerName === null) q.ministerName = speaker;
       }
+      q.exchange.push({ type: "speech", speakerName: speaker, electorate: null, text });
     }
   }
   if (section === "QWN") flushQuestion();

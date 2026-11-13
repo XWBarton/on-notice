@@ -138,6 +138,51 @@ export async function fetchScrapedXml(
   return res.text();
 }
 
+/** UTC instant for a wall-clock time in Australia/Sydney (handles AEST/AEDT). */
+function sydneyWallClockToUtc(y: number, mo: number, d: number, h: number, mi: number): Date {
+  const asIfUtc = Date.UTC(y, mo - 1, d, h, mi);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Sydney", hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).formatToParts(new Date(asIfUtc));
+  const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
+  const sydneyAtGuess = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"));
+  return new Date(asIfUtc - (sydneyAtGuess - asIfUtc));
+}
+
+/**
+ * List every sitting date OA's scrapedxml mirror currently holds for a chamber, with the
+ * time each file was last (re)published. One small request answers "which days exist, and
+ * has any changed since we processed it?" for the whole catch-up window — OA routinely
+ * publishes a day's file days or weeks late, and occasionally republishes old ones.
+ *
+ * The Apache index prints modification times in the server's local (Sydney) time.
+ */
+export async function listScrapedXml(type: "representatives" | "senate"): Promise<Map<string, Date>> {
+  const subdir = type === "senate" ? "senate_debates" : "representatives_debates";
+  const url = `https://data.openaustralia.org.au/scrapedxml/${subdir}/`;
+
+  let html: string | null = null;
+  for (let attempt = 1; attempt <= 3 && html === null; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      html = await res.text();
+    } catch (e) {
+      if (attempt === 3) throw new Error(`listScrapedXml failed: ${(e as Error).message}`);
+      await new Promise((r) => setTimeout(r, attempt * 3000));
+    }
+  }
+
+  const listing = new Map<string, Date>();
+  const rowRe = /href="(\d{4}-\d{2}-\d{2})\.xml"[^>]*>[^<]*<\/a>\s*(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/g;
+  for (const m of html!.matchAll(rowRe)) {
+    listing.set(m[1], sydneyWallClockToUtc(+m[2], +m[3], +m[4], +m[5], +m[6]));
+  }
+  if (listing.size === 0) throw new Error("listScrapedXml: directory index had no dated files (format changed?)");
+  return listing;
+}
+
 /**
  * Check if parliament sat on a given date by seeing if debates exist.
  */

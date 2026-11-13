@@ -41,11 +41,13 @@ export interface RecoveredQuestion {
  */
 export async function identifyMissingQuestioners(
   speakerCallTranscript: string,
-  knownQuestions: { askerName: string | null }[]
+  knownQuestions: { askerName: string | null; electorate?: string | null }[]
 ): Promise<MissingQuestioner[]> {
+  // The Speaker calls House members by seat ("the member for Canberra"), never by name,
+  // so the model needs each known asker's electorate to recognise them in the captions.
   const knownNames = knownQuestions
     .filter((q) => q.askerName)
-    .map((q) => q.askerName!)
+    .map((q) => (q.electorate ? `${q.askerName} (the member for ${q.electorate})` : q.askerName!))
     .join(", ");
 
   const result = await callClaude<MissingQuestioner[]>(
@@ -67,6 +69,7 @@ DO NOT count:
 - Interjections from senators during another member's speech
 - Supplementary questions — only count senators newly called by the President for a primary question
 - Anyone who appears to be both the questioner and the minister (self-referential)
+- Anyone in the known list, however the chair refers to them — "the member for [electorate]" IS the known questioner with that electorate
 
 For each genuinely missing questioner return:
 - name: their full name as best you can determine
@@ -84,6 +87,77 @@ ${speakerCallTranscript}`,
   return result.filter(
     (r) => typeof r.name === "string" && r.name.trim().length > 0 && typeof r.approxStartSec === "number"
   );
+}
+
+export interface KnownMember {
+  name_last: string;
+  name_first: string | null;
+  electorate: string | null;
+}
+
+const surname = (name: string) =>
+  name.trim().toLowerCase().replace(/[^a-z' -]/g, "").split(/\s+/).pop() ?? "";
+
+/**
+ * Deterministic safety net behind the model in step 1.
+ *
+ * Captions refer to House members by electorate, Hansard by name — so the model used to
+ * report nearly every question as "missing" ("Member for Canberra" vs "Alicia Payne") and
+ * the day ended up with 14-odd duplicates. This resolves electorates to members, drops
+ * anyone already in Hansard, drops anyone who can't be identified, and refuses the whole
+ * batch if it's implausibly large: Hansard missing one or two questions is normal while a
+ * day is in proof, missing a third of question time means the detection is wrong.
+ */
+export function filterMissingQuestioners(
+  candidates: MissingQuestioner[],
+  knownAskerNames: (string | null)[],
+  members: KnownMember[]
+): MissingQuestioner[] {
+  const knownSurnames = new Set(knownAskerNames.filter(Boolean).map((n) => surname(n!)));
+  const byElectorate = new Map(
+    members.filter((m) => m.electorate).map((m) => [m.electorate!.trim().toLowerCase(), m])
+  );
+  const memberSurnames = new Set(members.map((m) => surname(m.name_last)));
+
+  const kept: MissingQuestioner[] = [];
+  const seen = new Set<string>();
+  for (const c of candidates) {
+    let name = c.name.replace(/^(the\s+)?(hon(ourable)?\.?\s+)?(senator|mr|mrs|ms|dr)\s+/i, "").trim();
+
+    const seat = name.match(/^(?:the\s+)?(?:honourable\s+)?member\s+for\s+(.+)$/i);
+    if (seat) {
+      const member = byElectorate.get(seat[1].trim().toLowerCase());
+      if (!member) {
+        console.log(`    Ignoring "${c.name}" — no member holds that electorate`);
+        continue;
+      }
+      name = [member.name_first, member.name_last].filter(Boolean).join(" ");
+    }
+
+    const key = surname(name);
+    if (!key || knownSurnames.has(key)) {
+      console.log(`    Ignoring "${c.name}" — already in Hansard`);
+      continue;
+    }
+    if (members.length > 0 && !memberSurnames.has(key)) {
+      console.log(`    Ignoring "${c.name}" — not a member of this chamber`);
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push({ ...c, name });
+  }
+
+  const known = knownSurnames.size;
+  const limit = Math.max(2, Math.ceil(known * 0.3));
+  if (known >= 6 && kept.length > limit) {
+    console.warn(
+      `    Caption check claims ${kept.length} missing questions against ${known} in Hansard — ` +
+      `implausible, ignoring all of them`
+    );
+    return [];
+  }
+  return kept;
 }
 
 /**

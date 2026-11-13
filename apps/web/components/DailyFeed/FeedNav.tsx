@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { format, parseISO } from "date-fns";
 import { useBrainrot } from "@/context/BrainrotContext";
 
 interface FeedNavProps {
@@ -76,12 +77,9 @@ export function FeedNav({ currentDate, currentParliament, availableDates }: Feed
         >
           {availableDates.map((d) => (
             <option key={d} value={d}>
-              {new Date(d + "T00:00:00").toLocaleDateString("en-AU", {
-                weekday: "short",
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-              })}
+              {/* date-fns, not toLocaleDateString: Intl month names differ between the
+                  server and Safari ("Sept" vs "Sep"), which broke hydration of this page. */}
+              {format(parseISO(d), "EEE, d MMM yyyy")}
             </option>
           ))}
         </select>

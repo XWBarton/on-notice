@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { parseISO, formatDistanceToNowStrict } from "date-fns";
+import { parseISO, formatDistanceStrict } from "date-fns";
 import { PartyBadge } from "@/components/Member/PartyBadge";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -284,11 +284,23 @@ function hasBills(count: number) { return count > 0; }
 
 // ─── Bill card ────────────────────────────────────────────────────────────────
 
+/**
+ * The current time, available only after mount. "N days ago" depends on when it's
+ * rendered, so the cached server HTML and the browser disagree — rendering it during
+ * hydration was a guaranteed mismatch.
+ */
+function useNow(): Date | null {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => setNow(new Date()), []);
+  return now;
+}
+
 function BillCard({ bill }: { bill: BillRow }) {
+  const now = useNow();
   const sittingDay = bill.sitting_days;
   const dateForAgo = sittingDay?.sitting_date ?? bill.introduced_date;
-  const ago = dateForAgo
-    ? formatDistanceToNowStrict(parseISO(dateForAgo), { addSuffix: true })
+  const ago = dateForAgo && now
+    ? formatDistanceStrict(parseISO(dateForAgo), now, { addSuffix: true })
     : null;
   const originParl = bill.parliament_id;
   const currentParl = bill.sitting_days?.parliament_id ?? originParl;

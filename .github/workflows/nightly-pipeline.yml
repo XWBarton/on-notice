@@ -5,7 +5,7 @@ on:
     # 6:30am AWST Mon–Fri = 22:30 UTC Sun–Thu (both chambers)
     # Pipeline retries video discovery every hour until 8:30am AWST if no video found (up to 2 retries)
     - cron: '30 22 * * 0-4'
-    # 6:30pm AWST Mon–Fri = 10:30 UTC Mon–Fri (Senate retry — OA often indexes Senate later in the day)
+    # 6:30pm AWST Mon–Fri = 10:30 UTC Mon–Fri (second pass — picks up anything OA published during the day)
     - cron: '30 10 * * 1-5'
   workflow_dispatch:
     inputs:
@@ -27,8 +27,37 @@ on:
         required: false
         type: boolean
         default: false
+      catch_up_days:
+        description: 'Catch-up window in days when no date is given (e.g. 150 to backfill a long gap)'
+        required: false
+        default: '45'
+      verify:
+        description: 'Catch-up: re-check every day in the window against Hansard, not just new/changed ones'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
+  # ── Keep the schedule alive ────────────────────────────────────────────────
+  # GitHub silently disables scheduled workflows after 60 days without repo activity —
+  # that is how the nightly pipeline stopped on 28 Oct 2026 with nobody noticing.
+  # Re-enabling through the API resets that timer, so the schedule sustains itself.
+  keepalive:
+    name: keep schedules enabled
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    permissions:
+      actions: write
+    steps:
+      - name: Re-enable scheduled workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for wf in nightly-pipeline.yml sync-members.yml; do
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/$wf/enable" \
+              && echo "✓ $wf" || echo "::warning::could not re-enable $wf"
+          done
+
   # ── Federal pipeline (House + Senate) ──────────────────────────────────────
   federal:
     name: ${{ matrix.parliament }}
@@ -38,8 +67,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Morning run: both chambers. Evening retry (10:30 UTC): Senate only (OA indexes Senate late).
-        parliament: ${{ (github.event_name == 'schedule' && github.event.schedule == '30 22 * * 0-4') && fromJSON('["fed_hor","fed_sen"]') || (github.event_name == 'schedule' && github.event.schedule == '30 10 * * 1-5') && fromJSON('["fed_sen"]') || fromJSON(format('["{0}"]', github.event.inputs.parliament)) }}
+        # Scheduled runs: both chambers, both times — catch-up exits in seconds when there's nothing new.
+        parliament: ${{ github.event_name == 'schedule' && fromJSON('["fed_hor","fed_sen"]') || fromJSON(format('["{0}"]', github.event.inputs.parliament)) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -100,17 +129,14 @@ jobs:
             # Explicit date (manual dispatch) — process just that day.
             npx ts-node packages/pipeline/src/index.ts $BASE --date "$DATE_ARG"
           else
-            # Catch-up: re-attempt the last few sitting days. OpenAustralia often
-            # indexes a sitting day a day or more after it happens — after our
-            # morning run — so a single same-day attempt misses it. Already-complete
-            # days exit cheaply via the pipeline's idempotency guard; days OA has
-            # since indexed get backfilled. Per-day failures are non-fatal so one
-            # bad day doesn't block the others (it retries next run).
-            for i in 1 2 3 4; do
-              D=$(TZ=Australia/Sydney date -d "$i days ago" +%F 2>/dev/null || TZ=Australia/Sydney date -v-${i}d +%F)
-              echo "── Catch-up attempt for $D (${{ matrix.parliament }}) ──"
-              npx ts-node packages/pipeline/src/index.ts $BASE --date "$D" || echo "::warning::${{ matrix.parliament }} $D attempt failed — will retry next run"
-            done
+            # Catch-up: ask OpenAustralia which sitting days it has published and process
+            # any we're missing or that changed since we stored them. OA often publishes a
+            # day late — sometimes weeks late — so a fixed "last few days" retry misses
+            # days outright. Days already in sync are skipped without any work; a failing
+            # day doesn't block the others and is retried next run (the step still fails
+            # so it shows up red).
+            if [ "${{ github.event.inputs.verify || 'false' }}" = "true" ]; then BASE="$BASE --verify"; fi
+            npx ts-node packages/pipeline/src/index.ts $BASE --catch-up --days "${{ github.event.inputs.catch_up_days || '45' }}"
           fi
 
       - name: Notify on failure

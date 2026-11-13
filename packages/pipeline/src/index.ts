@@ -2,7 +2,14 @@
  * On Notice — Nightly Pipeline Orchestrator
  *
  * Runs nightly via GitHub Actions. Processes Federal Parliament (HoR) by default.
- * Usage: ts-node src/index.ts [--parliament fed_hor] [--date 2025-04-09] [--skip-audio]
+ *
+ * One day:   ts-node src/index.ts [--parliament fed_hor] [--date 2025-04-09] [--skip-audio] [--force]
+ * Catch-up:  ts-node src/index.ts --parliament fed_sen --catch-up [--days 45] [--verify] [--dry-run]
+ *
+ * Catch-up is what the nightly job runs: it asks OpenAustralia which sitting days it has
+ * published, and processes any we're missing or that changed since we stored them (see
+ * catch-up.ts). --verify re-checks every day in the window against Hansard; --dry-run
+ * prints the plan without touching anything.
  */
 
 import { execFile } from "node:child_process";
@@ -14,6 +21,8 @@ import { db } from "./db/client";
 import { PARLIAMENTS, FEDERAL_PARTIES } from "./config";
 import { syncFederalMembers } from "./scrapers/fed-members";
 import { fetchDebates, fetchScrapedXml, fetchSpeechRows, type OASpeechRow } from "./scrapers/fed-hansard";
+import { hansardDrift } from "./reconcile";
+import { planCatchUp } from "./catch-up";
 import { fetchDivisionsForDate } from "./scrapers/tvfy-divisions";
 import { parseDebates, parseScrapedXml } from "./parsers/hansard-xml";
 import { classifyQuestion, getMemberLookup, resetMemberCache } from "./parsers/questions";
@@ -31,23 +40,28 @@ import { buildEpisode, type QuestionSegment } from "./audio/editor";
 import { uploadEpisode, uploadClip, uploadChapters, fetchMemberClips } from "./audio/uploader";
 import { buildQtTranscript, buildQtTranscriptFromParlViewCaptions } from "./audio/captions";
 import { extractTimestampsWithAI } from "./ai/timestamp-questions";
-import { identifyMissingQuestioners, extractQuestionFromCaptions } from "./ai/recover-missing-questions";
+import { identifyMissingQuestioners, extractQuestionFromCaptions, filterMissingQuestioners } from "./ai/recover-missing-questions";
 import * as fs from "node:fs";
 
-async function run() {
-  const { values } = parseArgs({
-    options: {
-      parliament: { type: "string", default: "fed_hor" },
-      date: { type: "string", default: new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date(Date.now() - 864e5)) },
-      "skip-audio": { type: "boolean", default: false },
-      "members-only": { type: "boolean", default: false },
-      force: { type: "boolean", default: false },
-    },
-  });
+interface DayOptions {
+  parliamentId: string;
+  date: string;
+  skipAudio: boolean;
+  /** Reprocess even if the stored day already matches Hansard. */
+  force: boolean;
+  /** How many times to wait an hour for the ParlView recording before giving up on audio. */
+  videoRetries: number;
+}
 
-  const parliamentId = values.parliament as string;
-  const date = values.date as string;
-  const skipAudio = values["skip-audio"] as boolean;
+/**
+ * - "not-sitting": no Hansard for the day from any source
+ * - "in-sync":     already complete and still matches Hansard — nothing done
+ * - "processed":   day was (re)built
+ */
+type DayOutcome = "not-sitting" | "in-sync" | "processed";
+
+async function processDay(opts: DayOptions): Promise<DayOutcome> {
+  const { parliamentId, date, skipAudio } = opts;
 
   const config = PARLIAMENTS[parliamentId];
   if (!config) throw new Error(`Unknown parliament: ${parliamentId}`);
@@ -58,56 +72,65 @@ async function run() {
   console.log(`Skip audio: ${skipAudio}`);
   console.log(`========================\n`);
 
-  // ── Idempotency / catch-up guard ────────────────────────────────────────────
-  // The nightly job re-attempts the last few days (OpenAustralia often indexes a
-  // sitting day a day or more after it happens, well after our morning run). Days
-  // already fully processed exit here cheaply so the loop costs almost nothing.
-  // Use --force to reprocess a complete day.
-  if (!values.force) {
-    const { data: existing } = await db
-      .from("sitting_days")
-      .select("pipeline_status")
-      .eq("parliament_id", parliamentId)
-      .eq("sitting_date", date)
-      .maybeSingle();
-    if (existing?.pipeline_status === "complete") {
-      console.log(`${date} already complete — skipping (use --force to reprocess).`);
-      return;
-    }
-  }
-
-  // ── Step 1: Sync members (weekly) ───────────────────────────────────────────
-  console.log("Step 1: Syncing members...");
-  if (config.jurisdiction === "federal") {
-    await syncFederalMembers(parliamentId as "fed_hor" | "fed_sen").catch((e) => {
-      console.warn(`Member sync failed (OA may be down): ${e.message} — continuing with existing member data`);
-    });
-  }
-  if (values["members-only"]) {
-    console.log("Members-only mode, exiting.");
-    return;
-  }
-  resetMemberCache();
-
-  // ── Step 2: Check for sitting / create sitting_days row ─────────────────────
-  console.log("Step 2: Checking for sitting day...");
   const oaType = config.chamber === "lower" ? "representatives" : "senate";
 
-  // Scraped XML is published same-day, well ahead of the JSON API (which can lag a
-  // sitting day by 24h+ while OA's own proof→final Hansard publishing catches up) —
-  // try it first and only fall back to the JSON API if it's not there yet.
+  const { data: existing } = await db
+    .from("sitting_days")
+    .select("id, pipeline_status, pipeline_error")
+    .eq("parliament_id", parliamentId)
+    .eq("sitting_date", date)
+    .maybeSingle();
+  const wasComplete = existing?.pipeline_status === "complete";
+
+  // ── Step 2: Find Hansard for the day ────────────────────────────────────────
+  console.log("Step 2: Checking for sitting day...");
+
+  // Scraped XML is the complete record. The JSON API is only a stopgap for the window
+  // before OA publishes the XML (it serves proof-stage data and can be missing questions).
   const xmlText = await fetchScrapedXml(date, oaType as "representatives" | "senate").catch((e: Error) => {
     console.warn(`  Scraped XML fetch failed: ${e.message} — falling back to JSON API`);
     return null;
   });
+  const xmlResult = xmlText ? parseScrapedXml(xmlText) : null;
+
+  // ── Already processed? Only redo the day if Hansard now says something different ──
+  // "Complete" is not final: the first run may have seen a partial day, and OA publishes
+  // (or republishes) the full record later. Use --force to rebuild regardless.
+  if (wasComplete && !opts.force) {
+    if (!xmlResult || xmlResult.questions.length === 0) {
+      console.log(`${date} already complete and no newer Hansard XML to compare against — skipping.`);
+      return "in-sync";
+    }
+    const { data: storedQuestions, error: storedError } = await db
+      .from("questions")
+      .select("question_number, subject, answer_text, source_note")
+      .eq("sitting_day_id", existing!.id);
+    if (storedError) throw new Error(`Could not read stored questions: ${storedError.message}`);
+
+    const drift = hansardDrift(xmlResult.questions, storedQuestions ?? []);
+    if (drift.length === 0) {
+      console.log(`${date} already complete and matches Hansard (${xmlResult.questions.length} questions) — skipping.`);
+      if (existing!.pipeline_error) {
+        await db.from("sitting_days").update({ pipeline_error: null }).eq("id", existing!.id);
+      }
+      return "in-sync";
+    }
+    console.log(`${date} is complete but out of date — rebuilding:`);
+    for (const reason of drift) console.log(`  • ${reason}`);
+  }
+
   let debateData: Awaited<ReturnType<typeof fetchDebates>> = null;
-  if (!xmlText) {
+  if (!xmlResult) {
     debateData = await fetchDebates(date, oaType as "representatives" | "senate");
     if (!debateData) {
-      console.log(`No debates found for ${date} — parliament likely not sitting. Exiting.`);
-      return;
+      console.log(`No debates found for ${date} — parliament likely not sitting.`);
+      return "not-sitting";
     }
   }
+
+  // ── Step 1: Sync members ────────────────────────────────────────────────────
+  // Only once we know there's a day to build — catch-up skips most days before this.
+  await syncMembersOnce(parliamentId);
 
   const { data: sitting, error: sittingError } = await db
     .from("sitting_days")
@@ -115,7 +138,9 @@ async function run() {
       {
         parliament_id: parliamentId,
         sitting_date: date,
-        pipeline_status: "running",
+        // A day being refreshed stays visible on the site with its existing data until
+        // the rebuild lands; only a first-time build shows as "running".
+        pipeline_status: wasComplete ? "complete" : "running",
         hansard_url: `https://hansard.aph.gov.au/hansard/daily/${config.chamber === "lower" ? "Representatives" : "Senate"}/${date}/`,
       },
       { onConflict: "parliament_id,sitting_date" }
@@ -131,10 +156,13 @@ async function run() {
     // ── Step 3: Parse debates — scraped XML primary, JSON API fallback ───────
     console.log("Step 3: Parsing debates...");
     let parseResult: ReturnType<typeof parseDebates>;
-    if (xmlText) {
-      const xmlResult = parseScrapedXml(xmlText);
+    // Where the questions came from. Only the XML is the full record; anything built from
+    // the JSON API is provisional and gets rebuilt once the XML is published.
+    let questionSource: "xml" | "api" = "api";
+    if (xmlResult) {
       if (xmlResult.questions.length > 0) {
         parseResult = xmlResult;
+        questionSource = "xml";
       } else {
         // XML had no questions (may have bills) — fall back to JSON API for questions;
         // merge XML bills in case JSON API misses any.
@@ -268,7 +296,13 @@ async function run() {
     // Tracks asker names of questions recovered from captions so step 6 can set source_note
     const recoveredAskerNames = new Set<string>();
 
-    if (config.questionTimeChamber) {
+    // Only when working from the provisional JSON API. The XML is the complete Hansard
+    // record, so there is nothing for captions to add — and running this against it
+    // is what used to append a dozen duplicate "Member for X" questions to a day.
+    if (config.questionTimeChamber && questionSource === "xml") {
+      console.log("Step 3c: Hansard XML is complete — skipping caption recovery.");
+    }
+    if (config.questionTimeChamber && questionSource === "api") {
       console.log("Step 3c: Checking ParlView captions for questions missed by OA...");
       try {
         parlviewVideoEarly = await findParlViewVideo(date, parliamentId as "fed_hor" | "fed_sen");
@@ -289,20 +323,36 @@ async function run() {
                 const qtStartSec = timecodeToSeconds(qtSegment.segmentIn);
                 const qtEndSec   = timecodeToSeconds(qtSegment.segmentOut);
 
+                const { data: chamberMembers } = await db
+                  .from("members")
+                  .select("name_last, name_first, electorate")
+                  .eq("parliament_id", parliamentId);
+                const electorateOf = (name: string | null) => {
+                  const last = name?.trim().split(/\s+/).pop()?.toLowerCase();
+                  const matches = (chamberMembers ?? []).filter((m) => m.name_last.toLowerCase() === last);
+                  return matches.length === 1 ? matches[0].electorate : null;
+                };
+
                 const knownQuestions = questionsWithContent.map((q) => ({
                   askerName: q.askerName,
                   subject: q.subject,
+                  electorate: (q as { askerConstituency?: string | null }).askerConstituency ?? electorateOf(q.askerName),
                 }));
 
                 // Step 1: identify missing questioners + their approximate timestamps
                 // from the small speaker-call filtered transcript (no token budget issue)
-                const missingQuestioners = await identifyMissingQuestioners(
+                const claimedMissing = await identifyMissingQuestioners(
                   speakerCallTranscript,
                   knownQuestions
                 ).catch((e) => {
                   console.warn(`  Missing questioner detection failed: ${e.message}`);
                   return [];
                 });
+                const missingQuestioners = filterMissingQuestioners(
+                  claimedMissing,
+                  knownQuestions.map((q) => q.askerName),
+                  chamberMembers ?? []
+                );
 
                 // Step 2: for each missing questioner, extract a targeted ~7-minute
                 // window of raw captions around their start time and recover the full Q&A.
@@ -497,11 +547,11 @@ async function run() {
     // Link divisions to their bills now that bills are in the DB
     await linkDivisionsToBills(sittingDayId);
 
-    // Clear stale questions before re-inserting (numbering may have changed between runs)
-    await db.from("questions").delete().eq("sitting_day_id", sittingDayId);
-
-    // Sequential to avoid Claude rate limits; skip summary if no answer text available
-    const enrichedQuestions: Array<{ asker: string; minister: string; subject: string | null; summary: string | null }> = [];
+    // Sequential to avoid Claude rate limits; skip summary if no answer text available.
+    // Rows are built in full first and only then swapped in, so a failure part-way through
+    // summarising never leaves the day with half its questions.
+    const enrichedQuestions: Array<{ asker: string; minister: string; subject: string | null; summary: string | null; isDorothyDixer: boolean }> = [];
+    const questionRows: Record<string, unknown>[] = [];
     for (const q of classifiedQuestions) {
       let aiSummary: string | null = null;
 
@@ -527,7 +577,7 @@ async function run() {
         ? await brainrotify(aiSummary).catch(() => null)
         : null;
 
-      const { error } = await db.from("questions").upsert(
+      questionRows.push(
         {
           sitting_day_id: sittingDayId,
           question_number: q.questionNumber,
@@ -556,12 +606,19 @@ async function run() {
             }
             return null;
           })(),
-        },
-        { onConflict: "sitting_day_id,question_number" }
+        }
       );
-      if (error) console.warn(`Question upsert error: ${error.message}`);
-      enrichedQuestions.push({ asker: q.askerName ?? "", minister: q.ministerName ?? "", subject: q.subject, summary: aiSummary });
+      enrichedQuestions.push({ asker: q.askerName ?? "", minister: q.ministerName ?? "", subject: q.subject, summary: aiSummary, isDorothyDixer: q.isDorothyDixer });
     }
+
+    // Replace the day's questions (numbering may have changed between runs).
+    const { error: clearError } = await db.from("questions").delete().eq("sitting_day_id", sittingDayId);
+    if (clearError) throw new Error(`Could not clear old questions: ${clearError.message}`);
+    if (questionRows.length > 0) {
+      const { error: insertError } = await db.from("questions").insert(questionRows);
+      if (insertError) throw new Error(`Could not store questions: ${insertError.message}`);
+    }
+    console.log(`Stored ${questionRows.length} questions`);
 
     // ── Step 7: Daily digest ──────────────────────────────────────────────────
     console.log("Step 7: Generating daily digest...");
@@ -577,12 +634,7 @@ async function run() {
       parliament: config.name,
       bills: enrichedBills.filter(Boolean) as Array<{ title: string; party: string | null; summary: string | null }>,
       divisions: divisionSummaries,
-      questions: enrichedQuestions.filter((q) => {
-        const classified = classifiedQuestions.find(
-          (c) => c.questionNumber === allQuestions.indexOf(allQuestions.find((aq) => aq.subject === q.subject)!) + 1
-        );
-        return !classified?.isDorothyDixer;
-      }),
+      questions: enrichedQuestions.filter((q) => !q.isDorothyDixer),
     }).catch((e) => {
       console.warn(`Daily digest failed: ${e.message}`);
       return { lede: "", digest: "" };
@@ -617,7 +669,7 @@ async function run() {
         // The pipeline starts at 5:30am Perth — up to 2 retries (6:30, 7:30am).
         // Text processing above is already done; this only gates the audio.
         const HOUR_MS = 60 * 60 * 1000;
-        const MAX_RETRIES = 2;
+        const MAX_RETRIES = opts.videoRetries;
         // Reuse the video fetched in step 3c if available (saves a redundant API call)
         let parlviewVideo = parlviewVideoEarly ?? await findParlViewVideo(date, parliamentId as "fed_hor" | "fed_sen");
         for (let attempt = 1; attempt <= MAX_RETRIES && !parlviewVideo; attempt++) {
@@ -960,10 +1012,16 @@ async function run() {
     }
 
     // ── Step 9: Mark complete ─────────────────────────────────────────────────
+    // A day built from the JSON API that yielded no questions isn't done — OA simply
+    // hasn't indexed question time yet. Leave it "partial" so catch-up keeps retrying
+    // rather than freezing an empty day as complete. (No questions in the full XML is a
+    // genuine result: some sitting days have no question time.)
+    const provisionalEmpty = questionSource === "api" && classifiedQuestions.length === 0 && !wasComplete;
     await db
       .from("sitting_days")
-      .update({ pipeline_status: "complete" })
+      .update({ pipeline_status: provisionalEmpty ? "partial" : "complete", pipeline_error: null })
       .eq("id", sittingDayId);
+    if (provisionalEmpty) console.log("  No questions from the JSON API yet — marked partial, will retry.");
 
     // Trigger Vercel ISR revalidation so the page reflects new data immediately
     const revalidateUrl = process.env.VERCEL_URL
@@ -990,22 +1048,120 @@ async function run() {
     }
 
     console.log("\n✓ Pipeline complete");
+    return "processed";
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`\nPipeline error: ${message}`);
 
+    // A failed refresh of an already-complete day keeps the day live with its previous
+    // data; the recorded error makes catch-up retry it. A failed first build is "error".
     await db
       .from("sitting_days")
-      .update({ pipeline_status: "error", pipeline_error: message })
+      .update(wasComplete ? { pipeline_error: message } : { pipeline_status: "error", pipeline_error: message })
       .eq("id", sittingDayId);
 
-    process.exit(1);
+    throw err;
   } finally {
     await closeParlInfoBrowser();
   }
 }
 
-run().catch((err) => {
+const syncedParliaments = new Set<string>();
+
+/** Member sync is per chamber, not per day — do it once however many days a run covers. */
+async function syncMembersOnce(parliamentId: string) {
+  if (syncedParliaments.has(parliamentId)) return;
+  syncedParliaments.add(parliamentId);
+  console.log("Step 1: Syncing members...");
+  if (PARLIAMENTS[parliamentId]?.jurisdiction === "federal") {
+    await syncFederalMembers(parliamentId as "fed_hor" | "fed_sen").catch((e) => {
+      console.warn(`Member sync failed (OA may be down): ${e.message} — continuing with existing member data`);
+    });
+  }
+  resetMemberCache();
+}
+
+async function main() {
+  const { values } = parseArgs({
+    options: {
+      parliament: { type: "string", default: "fed_hor" },
+      date: { type: "string", default: new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date(Date.now() - 864e5)) },
+      "skip-audio": { type: "boolean", default: false },
+      "members-only": { type: "boolean", default: false },
+      force: { type: "boolean", default: false },
+      "catch-up": { type: "boolean", default: false },
+      days: { type: "string", default: "45" },
+      verify: { type: "boolean", default: false },
+      "dry-run": { type: "boolean", default: false },
+    },
+  });
+
+  const parliamentId = values.parliament as string;
+  const config = PARLIAMENTS[parliamentId];
+  if (!config) throw new Error(`Unknown parliament: ${parliamentId}`);
+  const skipAudio = values["skip-audio"] as boolean;
+
+  if (values["members-only"]) {
+    await syncMembersOnce(parliamentId);
+    console.log("Members-only mode, exiting.");
+    return;
+  }
+
+  if (!values["catch-up"]) {
+    await processDay({ parliamentId, date: values.date as string, skipAudio, force: values.force as boolean, videoRetries: 2 });
+    return;
+  }
+
+  // ── Catch-up: every day in the window that's missing or out of date ───────────
+  const days = Number(values.days);
+  if (!Number.isInteger(days) || days < 1) throw new Error(`--days must be a positive whole number, got "${values.days}"`);
+
+  console.log(`\n=== Catch-up: ${config.name}, last ${days} days ===`);
+  const tasks = await planCatchUp({
+    parliamentId,
+    oaType: config.chamber === "lower" ? "representatives" : "senate",
+    days,
+    verifyAll: values.verify as boolean,
+  });
+  if (tasks.length === 0) {
+    console.log("Nothing to do — every sitting day OpenAustralia has published is processed and current.");
+    return;
+  }
+  for (const t of tasks) console.log(`  ${t.date}  ${t.reason}`);
+  if (values["dry-run"]) {
+    console.log(`\nDry run — ${tasks.length} day(s) would be checked. Nothing was changed.`);
+    return;
+  }
+
+  const yesterday = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" }).format(new Date(Date.now() - 864e5));
+  const results: { date: string; outcome: string }[] = [];
+  for (const t of tasks) {
+    try {
+      const outcome = await processDay({
+        parliamentId,
+        date: t.date,
+        skipAudio,
+        force: values.force as boolean,
+        // Only yesterday's recording can still be on its way; older ones exist or never will.
+        videoRetries: t.date === yesterday ? 2 : 0,
+      });
+      results.push({ date: t.date, outcome });
+    } catch (err) {
+      // One bad day must not block the rest — it stays flagged and is retried next run.
+      results.push({ date: t.date, outcome: `FAILED: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }
+
+  console.log(`\n=== Catch-up summary: ${config.name} ===`);
+  for (const r of results) console.log(`  ${r.date}  ${r.outcome}`);
+  const failed = results.filter((r) => r.outcome.startsWith("FAILED"));
+  if (failed.length > 0) {
+    console.error(`\n${failed.length} of ${results.length} day(s) failed — they will be retried on the next run.`);
+    process.exitCode = 1;
+  }
+}
+
+main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
